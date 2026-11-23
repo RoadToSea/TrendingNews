@@ -67,4 +67,13 @@ pnpm exec tsc --noEmit
 
 ## 生产部署
 
-服务器环境准备、systemd 常驻服务、Nginx 子路径 `/radar/` 反代与每日 SQLite 热备份方案请参阅 [deploy/README.md](deploy/README.md)。
+### Docker Compose（推荐）
+
+```bash
+cp .env.docker.example .env.docker
+chmod 600 .env.docker
+# 编辑 .env.docker 填入随机 TRENDRADAR_SECRET_KEY
+docker compose up -d --build
+```
+
+后端服务绑定于 `127.0.0.1:8000`，前端静态容器绑定于 `127.0.0.1:8085`，由宿主机 Nginx 统一按 `/radar/` 子路径反代；详见 [deploy/README.md](deploy/README.md)。

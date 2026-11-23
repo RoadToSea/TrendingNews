@@ -28,6 +28,7 @@ frontend/dist/
 backend/.env
 frontend/.env.local
 !.env.example
+!.env.docker.example
 !deploy/backend.env.example
 
 # OS artifacts

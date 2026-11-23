@@ -1,0 +1,32 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: trendradar-backend
+    restart: unless-stopped
+    network_mode: host
+    user: "1000:1000"
+    env_file:
+      - .env.docker
+    environment:
+      HOME: /home/liu
+      TZ: Asia/Shanghai
+    volumes:
+      - ${TRENDRADAR_DATA_DIR:-/home/liu/trendradar-data}:/app/data
+      - ${HOST_AGY_BIN:-/home/liu/.local/bin/agy}:/usr/local/bin/agy:ro
+      - ${HOST_GEMINI_DIR:-/home/liu/.gemini}:/home/liu/.gemini
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        VITE_BASE_PATH: /radar/
+    container_name: trendradar-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8085:80"
+    depends_on:
+      backend:
+        condition: service_healthy
