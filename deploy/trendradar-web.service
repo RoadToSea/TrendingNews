@@ -1,0 +1,20 @@
+[Unit]
+Description=TrendRadar Web Backend Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=liu
+Group=liu
+WorkingDirectory=/home/liu/trendradar/backend
+EnvironmentFile=/etc/trendradar/backend.env
+# Single worker preserves in-process APScheduler, SQLite write lock serialization, and agy concurrency guard.
+ExecStart=/home/liu/.local/bin/uv run uvicorn app.main:app --host ${TRENDRADAR_HOST} --port ${TRENDRADAR_PORT} --workers 1
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
