@@ -64,6 +64,17 @@ def test_prompt_template_crud_and_single_default(auth_client: TestClient) -> Non
 
 
 def test_chat_sse_stream_picker_context_and_save_report(auth_client: TestClient) -> None:
+    auth_client.post(
+        "/api/ai-providers",
+        json={
+            "name": "Chat Test Gemini",
+            "protocol": "gemini",
+            "api_key": "AIza-chat-stub",
+            "model": "gemini-2.5-flash",
+            "role_bindings": ["chat_default", "summary_report"],
+            "is_enabled": True,
+        },
+    )
     auth_client.app.state.gateway_service._adapter_factory = lambda s, k: _FakeChatGateway()
 
     sess_resp = auth_client.post("/api/chat/sessions", json={"title": "新对话"})

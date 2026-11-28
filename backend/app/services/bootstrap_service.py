@@ -2,11 +2,8 @@
 
 from datetime import datetime
 import logging
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 import zoneinfo
-
-import yaml
 
 from app.config import Settings
 from app.repositories.chat_repo import ChatRepository
@@ -33,7 +30,18 @@ _DEFAULT_DOMAINS: List[Dict[str, str]] = [
     {"id": "其他", "name": "其他", "description": "未归入以上类别的热点信息"},
 ]
 
-_DEFAULT_AUTHORITATIVE_PLATFORMS: List[Dict[str, Any]] = [
+_DEFAULT_DOMESTIC_PLATFORMS: List[Dict[str, Any]] = [
+    {"id": "toutiao", "name": "今日头条", "expected_domain": "toutiao.com"},
+    {"id": "baidu", "name": "百度热搜", "expected_domain": "baidu.com"},
+    {"id": "wallstreetcn-hot", "name": "华尔街见闻", "expected_domain": "wallstreetcn.com"},
+    {"id": "thepaper", "name": "澎湃新闻", "expected_domain": "thepaper.cn"},
+    {"id": "bilibili-hot-search", "name": "bilibili 热搜", "expected_domain": "bilibili.com"},
+    {"id": "cls-hot", "name": "财联社热门", "expected_domain": "cls.cn"},
+    {"id": "ifeng", "name": "凤凰网", "expected_domain": "ifeng.com"},
+    {"id": "tieba", "name": "贴吧", "expected_domain": "baidu.com"},
+    {"id": "weibo", "name": "微博", "expected_domain": "weibo.com"},
+    {"id": "douyin", "name": "抖音", "expected_domain": "douyin.com"},
+    {"id": "zhihu", "name": "知乎", "expected_domain": "zhihu.com"},
     {"id": "cankaoxiaoxi", "name": "参考消息", "enabled": True},
     {"id": "zaobao", "name": "联合早报", "enabled": True},
     {"id": "cls-telegraph", "name": "财联社电报", "enabled": True},
@@ -143,6 +151,14 @@ _DEFAULT_AUTHORITATIVE_RSS: List[Dict[str, Any]] = [
 
 _DEFAULT_FOREIGN_RSS: List[Dict[str, Any]] = [
     {
+        "id": "hacker-news",
+        "name": "Hacker News",
+        "url": "https://hnrss.org/frontpage",
+        "domain": "科技互联网",
+        "enabled": True,
+        "max_age_days": 2,
+    },
+    {
         "id": "gnews-world",
         "name": "Google News World",
         "url": "https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-US&gl=US&ceid=US:en",
@@ -208,17 +224,113 @@ _DEFAULT_FOREIGN_RSS: List[Dict[str, Any]] = [
     },
 ]
 
-_SECRET_WEBHOOK_FIELDS = (
-    "feishu_webhook_url",
-    "dingtalk_webhook_url",
-    "wework_webhook_url",
-    "telegram_bot_token",
-    "email_password",
-    "ntfy_token",
-    "bark_url",
-    "slack_webhook_url",
-    "generic_webhook_url",
-)
+_DEFAULT_KEYWORDS_TEXT = """[GLOBAL_FILTER]
+震惊
+
+[WORD_GROUPS]
+/胖东来|于东来/ => 胖东来
+
+/深度求索|幻方量化|梁文锋|\\bDeepSeek\\b/ => DeepSeek
+
+/华为|任正非|余承东|鸿蒙|海思|昇腾|鲲鹏|\\bHUAWEI\\b|\\bHarmonyOS\\b|\\bHiSilicon\\b/ => 华为
+
+/比亚迪|王传福|方程豹|腾势|仰望|弗迪|刀片电池|云辇|\\bBYD\\b|\\bDenza\\b|\\bYangwang\\b/ => 比亚迪
+
+/大疆|汪滔|灵眸|如影|\\bDJI\\b|\\bRoboMaster\\b|\\bMavic\\b|\\bZenmuse\\b/ => 大疆
+
+/宇树|王兴兴|\\bUnitree\\b/ => 宇树机器人
+
+/智元|灵犀|稚晖君|彭志辉|AgiBot/ => 智元机器人
+
+/众擎|EngineAI|赵同阳/ => 众擎机器人
+
+/黑神话|冯骥/ => 黑神话悟空
+
+/影之刃零|梁其伟/ => 影之刃零
+
+/三体|流浪地球|刘慈欣|郭帆/ => 三体/流浪地球
+
+申奥
+
+/京东|刘强东|\\bJD\\b|\\bJingdong\\b/ => 京东
+
+/字节|张一鸣|梁汝波|抖音|\\bByteDance\\b|\\bTikTok\\b|\\bDouyin\\b|\\bLark\\b|\\bCapCut\\b/ => 字节跳动
+
+/腾讯|鹅厂|马化腾|微信|QQ|天美|阅文集团|微众银行|\\bTencent\\b|\\bPony Ma\\b|\\bWeChat\\b|\\bLightSpeed\\b|\\bWeBank\\b/ => 腾讯
+
+/qwen|minimax|glm/ => 国产开源模型
+
+/特斯拉|马斯克|\\bTesla\\b|\\bElon Musk\\b|\\bCybertruck\\b|\\bModel 3\\b|\\bModel Y\\b|\\bModel S\\b|\\bModel X\\b|\\bFSD\\b/ => 特斯拉
+
+/英伟达|黄仁勋|\\bNVIDIA\\b|\\bGeForce\\b|\\bRTX\\b|\\bCUDA\\b|\\bJensen Huang\\b/ => 英伟达
+
+/苏姿丰|锐龙|霄龙|\\bAMD\\b|\\bRyzen\\b|\\bEPYC\\b|\\bRadeon\\b|\\bLisa Su\\b/ => AMD
+
+/微软|\\bMicrosoft\\b|\\bWindows\\b|\\bAzure\\b|\\bSatya Nadella\\b|\\bCopilot\\b/ => 微软
+
+/谷歌|皮查伊|安卓|油管|\\bGoogle\\b|\\bAlphabet\\b|\\bAndroid\\b|\\bChrome\\b|\\bYouTube\\b|\\bGemini\\b|\\bDeepMind\\b|\\bWaymo\\b/ => 谷歌
+
+/库克|\\biPhone\\b|\\biPad\\b|\\bMacBook\\b|\\biOS\\b|\\bVision Pro\\b|\\bAirPods\\b|\\bApple\\b|\\bTim Cook\\b/ => 苹果
+
+/\\bOpenAI\\b|\\bChatGPT\\b|\\bSora\\b|\\bDALL-E\\b|\\bSam Altman\\b|\\bGreg Brockman\\b/ => OpenAI
+
+/\\bAnthropic\\b|\\bClaude\\b|\\bDario Amodei\\b/ => Claude
+
+[中国]
+国产
+中国
+
+[东亚]
+日本
+朝鲜
+韩国
+
+[北美]
+美国
+加拿大
+
+[西欧]
+法国
+英国
+
+/俄罗斯|俄国/ => 俄罗斯
+
+印度
+
+[AI 相关]
+/(?<![a-zA-Z])ai(?![a-zA-Z])/
+人工智能
+
+[芯片]
+芯片
+光刻机
+半导体
+
+/水电|雅鲁藏布江/ => 水电
+
+/光伏|太阳能/ => 光伏
+
+核能
+
+能源
+
+/自动驾驶|无人驾驶|智驾/ => 自动驾驶
+
+机器人
+
+/机械狗|四足/ => 机器狗
+
+具身智能
+
+/月球|登月|火星|宇宙|飞船|航天|空间站|卫星/ => 航天
+
+量子
+
+脑机
+
+基因
+
+生产力"""
 
 
 class BootstrapService:
@@ -270,7 +382,6 @@ class BootstrapService:
             content=_DEFAULT_CHAT_PROMPT,
             now_iso=now_iso,
         )
-        self._chat_repo.ensure_default_antigravity_provider(now_iso)
         return generated_password
 
     def _seed_admin_user(self, now_iso: str) -> Optional[str]:
@@ -294,104 +405,41 @@ class BootstrapService:
         )
         return generated
 
-    def _load_legacy_yaml(self) -> Dict[str, Any]:
-        config_path = self._settings.resolved_legacy_root() / "config" / "config.yaml"
-        if not config_path.is_file():
-            return {}
-        try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-            return data if isinstance(data, dict) else {}
-        except Exception as exc:
-            logger.warning("Failed to parse legacy config.yaml: %s", exc)
-            return {}
-
-    def _load_legacy_keywords_text(self) -> str:
-        kw_path = self._settings.resolved_legacy_root() / "config" / "frequency_words.txt"
-        if not kw_path.is_file():
-            return ""
-        try:
-            return kw_path.read_text(encoding="utf-8")
-        except Exception as exc:
-            logger.warning("Failed to read legacy frequency_words.txt: %s", exc)
-            return ""
-
     def _build_default_sections(self) -> Dict[str, Dict[str, Any]]:
-        legacy = self._load_legacy_yaml()
-        platforms_raw = legacy.get("platforms", {}) or {}
-        rss_raw = legacy.get("rss", {}) or {}
-        adv = legacy.get("advanced", {}) or {}
-        adv_crawler = adv.get("crawler", {}) or {}
-        adv_rss = adv.get("rss", {}) or {}
-        notif_raw = legacy.get("notification", {}) or {}
-        channels = notif_raw.get("channels", {}) or {}
-
-        platform_sources = list(platforms_raw.get("sources", []) or [])
-        existing_platform_ids = {s.get("id") for s in platform_sources if isinstance(s, dict)}
-        for default_platform in _DEFAULT_AUTHORITATIVE_PLATFORMS:
-            if default_platform["id"] not in existing_platform_ids:
-                platform_sources.append(dict(default_platform))
-
-        rss_feeds = [
-            dict(f)
-            for f in (rss_raw.get("feeds", []) or [])
-            if isinstance(f, dict)
-            and f.get("id") != "yahoo-finance"
-            and "finance.yahoo.com/news/rssindex" not in str(f.get("url", ""))
-        ]
-        existing_feed_ids = {f.get("id") for f in rss_feeds}
-        for default_feed in (*_DEFAULT_AUTHORITATIVE_RSS, *_DEFAULT_FOREIGN_RSS):
-            if default_feed["id"] not in existing_feed_ids:
-                rss_feeds.append(dict(default_feed))
-                existing_feed_ids.add(default_feed["id"])
+        platform_sources = [dict(item) for item in _DEFAULT_DOMESTIC_PLATFORMS]
+        rss_feeds = [dict(item) for item in (*_DEFAULT_AUTHORITATIVE_RSS, *_DEFAULT_FOREIGN_RSS)]
 
         webhooks_payload = {
-            "enabled": bool(notif_raw.get("enabled", False)),
-            "feishu_webhook_url": str((channels.get("feishu") or {}).get("webhook_url", "")),
-            "dingtalk_webhook_url": str((channels.get("dingtalk") or {}).get("webhook_url", "")),
-            "wework_webhook_url": str((channels.get("wework") or {}).get("webhook_url", "")),
-            "wework_msg_type": str((channels.get("wework") or {}).get("msg_type", "markdown")),
-            "telegram_bot_token": str((channels.get("telegram") or {}).get("bot_token", "")),
-            "telegram_chat_id": str((channels.get("telegram") or {}).get("chat_id", "")),
-            "email_from": str((channels.get("email") or {}).get("from", "")),
-            "email_password": str((channels.get("email") or {}).get("password", "")),
-            "email_to": str((channels.get("email") or {}).get("to", "")),
-            "email_smtp_server": str((channels.get("email") or {}).get("smtp_server", "")),
-            "email_smtp_port": str((channels.get("email") or {}).get("smtp_port", "")),
-            "ntfy_server_url": str((channels.get("ntfy") or {}).get("server_url", "https://ntfy.sh")),
-            "ntfy_topic": str((channels.get("ntfy") or {}).get("topic", "")),
-            "ntfy_token": str((channels.get("ntfy") or {}).get("token", "")),
-            "bark_url": str((channels.get("bark") or {}).get("url", "")),
-            "slack_webhook_url": str((channels.get("slack") or {}).get("webhook_url", "")),
-            "generic_webhook_url": str((channels.get("generic_webhook") or {}).get("webhook_url", "")),
-            "generic_webhook_payload_template": str(
-                (channels.get("generic_webhook") or {}).get("payload_template", "")
-            ),
+            "enabled": False,
+            "feishu_webhook_url": "",
+            "dingtalk_webhook_url": "",
+            "wework_webhook_url": "",
+            "wework_msg_type": "markdown",
+            "generic_webhook_url": "",
+            "generic_webhook_payload_template": "",
         }
-        for key in _SECRET_WEBHOOK_FIELDS:
-            val = webhooks_payload[key].strip()
-            webhooks_payload[key] = f"enc:{self._cipher.encrypt(val)}" if val else ""
 
         return {
             "platforms": {
-                "enabled": bool(platforms_raw.get("enabled", True)),
-                "api_url": str(platforms_raw.get("api_url", "")),
-                "request_interval_ms": int(adv_crawler.get("request_interval", 200)),
-                "use_proxy": bool(adv_crawler.get("use_proxy", False)),
-                "proxy_url": str(adv_crawler.get("default_proxy", "")),
+                "enabled": True,
+                "api_url": "",
+                "request_interval_ms": 200,
+                "use_proxy": False,
+                "proxy_url": "",
                 "sources": platform_sources,
             },
             "rss": {
-                "enabled": bool(rss_raw.get("enabled", True)),
-                "request_interval_ms": int(adv_rss.get("request_interval", 500)),
-                "timeout_sec": int(adv_rss.get("timeout", 15)),
-                "use_proxy": bool(adv_rss.get("use_proxy", False)),
-                "proxy_url": str(adv_rss.get("proxy_url", "")),
-                "freshness_enabled": bool((rss_raw.get("freshness_filter") or {}).get("enabled", True)),
-                "max_age_days": int((rss_raw.get("freshness_filter") or {}).get("max_age_days", 2)),
+                "enabled": True,
+                "request_interval_ms": 500,
+                "timeout_sec": 15,
+                "use_proxy": False,
+                "proxy_url": "",
+                "freshness_enabled": True,
+                "max_age_days": 2,
                 "feeds": rss_feeds,
             },
             "keywords": {
-                "raw_text": self._load_legacy_keywords_text(),
+                "raw_text": _DEFAULT_KEYWORDS_TEXT,
                 "include_rss": True,
             },
             "domains": {

@@ -1,6 +1,5 @@
 """AI provider slot management, draft probing, model discovery, and runtime gateway resolution."""
 
-import asyncio
 from datetime import datetime
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -19,8 +18,8 @@ from app.models import (
 from app.repositories.chat_repo import ChatRepository
 from app.security import SecretCipher
 from app.services.ai_gateway.anthropic_adapter import AnthropicAdapter
-from app.services.ai_gateway.antigravity_adapter import AntigravityCLIAdapter
 from app.services.ai_gateway.base import LLMConfigError, LLMGateway, LLMGatewayError
+from app.services.ai_gateway.gemini_adapter import GeminiAdapter
 from app.services.ai_gateway.openai_adapter import OpenAIAdapter
 
 _ALL_ROLES: List[AIProviderRole] = ["chat_default", "summary_report", "event_cluster"]
@@ -60,7 +59,6 @@ class AIGatewayService:
         self._cipher = cipher
         self._settings = settings
         self._tz = zoneinfo.ZoneInfo(settings.timezone)
-        self._agy_semaphore = asyncio.Semaphore(max(1, settings.agy_max_concurrency))
         self._adapter_factory = adapter_factory
 
     def _now_iso(self) -> str:
@@ -231,14 +229,8 @@ class AIGatewayService:
             return OpenAIAdapter(api_key=api_key, base_url=base_url)
         if protocol == "anthropic":
             return AnthropicAdapter(api_key=api_key, base_url=base_url)
-        if protocol == "antigravity":
-            return AntigravityCLIAdapter(
-                agy_bin=self._settings.agy_bin,
-                proxy_url=self._settings.agy_proxy,
-                workspace=self._settings.agy_workspace,
-                timeout_sec=self._settings.agy_timeout_sec,
-                semaphore=self._agy_semaphore,
-            )
+        if protocol == "gemini":
+            return GeminiAdapter(api_key=api_key, base_url=base_url)
         raise LLMConfigError(f"Unsupported AI protocol: {protocol}")
 
     def build_adapter(self, slot_row: Dict[str, Any]) -> LLMGateway:

@@ -1,13 +1,15 @@
-"""RSS and Atom feed collector wrapping legacy `trendradar.crawler.rss.RSSFetcher` concurrently."""
+"""Concurrent RSS and Atom feed collector."""
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from trendradar.crawler.rss.fetcher import RSSFetcher
-from trendradar.storage.base import RSSItem
-from trendradar.utils.time import DEFAULT_TIMEZONE, is_within_days
-
 from app.services.collectors.base import CollectedItem, CollectionResult
+from app.services.collectors.rss_parser import (
+    DEFAULT_TIMEZONE,
+    RSSFetcher,
+    RSSItem,
+    is_within_days,
+)
 
 SourceDoneCallback = Callable[[str, str, List[CollectedItem], Optional[str]], None]
 

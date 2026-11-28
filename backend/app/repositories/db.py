@@ -138,7 +138,7 @@ SCHEMA_STATEMENTS = (
     CREATE TABLE IF NOT EXISTS ai_providers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE,
-        protocol TEXT NOT NULL CHECK(protocol IN ('openai', 'anthropic', 'antigravity')),
+        protocol TEXT NOT NULL CHECK(protocol IN ('openai', 'anthropic', 'gemini')),
         base_url TEXT NOT NULL DEFAULT '',
         api_key_encrypted TEXT NOT NULL DEFAULT '',
         model TEXT NOT NULL,
@@ -235,6 +235,27 @@ SCHEMA_STATEMENTS = (
     );
     """,
     "CREATE INDEX IF NOT EXISTS idx_invite_codes_created ON invite_codes(created_at DESC);",
+    """
+    CREATE TABLE IF NOT EXISTS user_settings (
+        user_id INTEGER NOT NULL,
+        section TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, section),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS user_webhook_deliveries (
+        user_id INTEGER NOT NULL,
+        source_type TEXT NOT NULL,
+        item_id INTEGER NOT NULL,
+        delivered_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, source_type, item_id),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_time ON user_webhook_deliveries(delivered_at DESC);",
 )
 
 
@@ -302,9 +323,81 @@ class Database:
         if "invited_by_code_id" not in cols:
             conn.execute("ALTER TABLE users ADD COLUMN invited_by_code_id INTEGER DEFAULT NULL")
 
+    @staticmethod
+    def _migrate_ai_providers_table(conn: sqlite3.Connection) -> None:
+        """Rebuild `ai_providers` when legacy schema still carries the `antigravity` CHECK constraint."""
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'ai_providers'"
+        ).fetchone()
+        if row is None or "antigravity" not in str(row["sql"] or "").lower():
+            return
+
+        # PRAGMA foreign_keys must be changed outside an open transaction in SQLite.
+        conn.commit()
+        conn.execute("PRAGMA foreign_keys=OFF;")
+        try:
+            conn.execute("BEGIN")
+            conn.execute(
+                """
+                UPDATE chat_sessions
+                SET provider_slot_id = NULL
+                WHERE provider_slot_id IN (
+                    SELECT id FROM ai_providers WHERE protocol = 'antigravity'
+                )
+                """
+            )
+            conn.execute(
+                """
+                UPDATE reports
+                SET provider_slot_id = NULL
+                WHERE provider_slot_id IN (
+                    SELECT id FROM ai_providers WHERE protocol = 'antigravity'
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE ai_providers_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    protocol TEXT NOT NULL CHECK(protocol IN ('openai', 'anthropic', 'gemini')),
+                    base_url TEXT NOT NULL DEFAULT '',
+                    api_key_encrypted TEXT NOT NULL DEFAULT '',
+                    model TEXT NOT NULL,
+                    extra_params_json TEXT NOT NULL DEFAULT '{}',
+                    role_bindings_json TEXT NOT NULL DEFAULT '[]',
+                    is_enabled INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO ai_providers_new (
+                    id, name, protocol, base_url, api_key_encrypted, model,
+                    extra_params_json, role_bindings_json, is_enabled, created_at, updated_at
+                )
+                SELECT
+                    id, name, protocol, base_url, api_key_encrypted, model,
+                    extra_params_json, role_bindings_json, is_enabled, created_at, updated_at
+                FROM ai_providers
+                WHERE protocol IN ('openai', 'anthropic', 'gemini')
+                """
+            )
+            conn.execute("DROP TABLE ai_providers")
+            conn.execute("ALTER TABLE ai_providers_new RENAME TO ai_providers")
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.execute("PRAGMA foreign_keys=ON;")
+
     def init_schema(self) -> None:
         """Create all tables and indexes idempotently and run lightweight migrations."""
         with self.write_transaction() as conn:
             for statement in SCHEMA_STATEMENTS:
                 conn.execute(statement)
             self._migrate_users_table(conn)
+            self._migrate_ai_providers_table(conn)

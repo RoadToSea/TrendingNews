@@ -13,6 +13,9 @@ interface SelectionContextValue {
   clearItems: () => void;
   chatOpen: boolean;
   setChatOpen: (open: boolean) => void;
+  requestedSessionId: number | null;
+  openChatSession: (sessionId: number) => void;
+  clearRequestedSession: () => void;
 }
 
 const SelectionContext = createContext<SelectionContextValue | null>(null);
@@ -21,6 +24,7 @@ export function SelectionProvider({ children }: { children: React.ReactNode }) {
   const [isPicking, setIsPicking] = useState(false);
   const [selectedItems, setSelectedItems] = useState<ChatContextItem[]>([]);
   const [chatOpen, setChatOpen] = useState(false);
+  const [requestedSessionId, setRequestedSessionId] = useState<number | null>(null);
 
   const togglePicking = useCallback(() => setIsPicking((prev) => !prev), []);
 
@@ -51,6 +55,15 @@ export function SelectionProvider({ children }: { children: React.ReactNode }) {
 
   const clearItems = useCallback(() => setSelectedItems([]), []);
 
+  const openChatSession = useCallback((sessionId: number) => {
+    setRequestedSessionId(sessionId);
+    setChatOpen(true);
+  }, []);
+
+  const clearRequestedSession = useCallback(() => {
+    setRequestedSessionId(null);
+  }, []);
+
   return (
     <SelectionContext.Provider
       value={{
@@ -65,6 +78,9 @@ export function SelectionProvider({ children }: { children: React.ReactNode }) {
         clearItems,
         chatOpen,
         setChatOpen,
+        requestedSessionId,
+        openChatSession,
+        clearRequestedSession,
       }}
     >
       {children}

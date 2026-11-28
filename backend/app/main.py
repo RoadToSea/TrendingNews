@@ -11,7 +11,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import admin, ai_config, auth, chat, hotlist, reports, settings as settings_router, trends
 from app.config import Settings
-from app.legacy_bridge import ensure_legacy_package_on_path
 from app.models import ReportGenerateRequest
 from app.repositories.chat_repo import ChatRepository
 from app.repositories.db import Database
@@ -41,7 +40,6 @@ def _scheduled_crawl_job(
     crawl_service: CrawlService,
     cluster_service: ClusterService,
     webhook_service: WebhookService,
-    settings_service: SettingsService,
 ) -> None:
     try:
         summary = crawl_service.run_once()
@@ -54,9 +52,7 @@ def _scheduled_crawl_job(
             clustered,
             len(summary.errors),
         )
-        schedule_cfg = settings_service.get_internal_section("schedule")
-        if schedule_cfg.get("push_on_crawl", False):
-            webhook_service.push_latest_summary()
+        webhook_service.push_incremental_for_all_users()
     except CrawlAlreadyRunningError:
         logger.info("Skipping scheduled crawl because another crawl run is already active")
     except Exception:
@@ -103,7 +99,7 @@ def _apply_schedule_to_scheduler(
         _scheduled_crawl_job,
         trigger="interval",
         minutes=interval_min,
-        args=[crawl_service, cluster_service, webhook_service, settings_service],
+        args=[crawl_service, cluster_service, webhook_service],
         id="crawl_job",
         max_instances=1,
         coalesce=True,
@@ -132,7 +128,6 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         FastAPI: Configured ASGI application.
     """
     cfg = settings or Settings()
-    ensure_legacy_package_on_path(cfg.resolved_legacy_root())
 
     db = Database(cfg.db_path)
     user_repo = UserRepository(db)
@@ -166,7 +161,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         report_repo, event_repo, news_repo, settings_service, gateway_service, cfg.timezone
     )
     chat_service = ChatService(chat_repo, report_repo, gateway_service, cfg.timezone)
-    webhook_service = WebhookService(settings_service, news_repo, cfg.timezone)
+    webhook_service = WebhookService(settings_service, settings_repo, news_repo, cfg.timezone)
     bootstrap_service = BootstrapService(cfg, db, user_repo, settings_repo, chat_repo, cipher)
 
     @asynccontextmanager

@@ -21,9 +21,9 @@ from app.services.collectors.foreign_apis import (
 )
 from app.services.collectors.newsnow import NewsNowCollector
 from app.services.collectors.rss import RssCollector
+from app.services.collectors.rss_parser import RSSData, RSSItem
 from app.services.crawl_service import CrawlService
 from app.services.settings_service import SettingsService
-from trendradar.storage.base import RSSData, RSSItem
 
 
 class _FakeDataFetcher:
@@ -50,7 +50,7 @@ class _FakeDataFetcher:
 
     @staticmethod
     def _check_domain_safety(items, expected_domain):
-        from trendradar.crawler.fetcher import DataFetcher
+        from app.services.collectors.newsnow import DataFetcher
         return DataFetcher._check_domain_safety(items, expected_domain)
 
 

@@ -11,7 +11,6 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { AutoSaveBadge } from "@/components/settings/AutoSaveBadge";
 import {
   createEmptySimpleGroup,
   getSimpleGroupTitle,
@@ -26,25 +25,21 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import type { AutoSaveStatus } from "@/hooks/useAutoSave";
 import { cn } from "@/lib/utils";
 
 interface KeywordsEditorCardProps {
   rawText: string;
   includeRss: boolean;
-  saveStatus?: AutoSaveStatus;
   onRawTextChange: (next: string, immediate?: boolean) => void;
   onKeepaliveFlush?: (nextRawText: string) => void;
   onIncludeRssChange: (next: boolean) => void;
-  onSave: () => void;
 }
 
 interface SimpleTermEditorProps {
   label: string;
-  description?: string;
   terms: SimpleKeywordTerm[];
   placeholder: string;
   addButtonText: string;
@@ -113,7 +108,6 @@ function buildNextTermsFromDraft(
 
 function SimpleTermEditor({
   label,
-  description,
   terms,
   placeholder,
   addButtonText,
@@ -179,7 +173,6 @@ function SimpleTermEditor({
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1">
         <span className="text-base sm:text-[15px] font-semibold leading-snug text-foreground">{label}</span>
-        {description && <span className="text-sm leading-relaxed text-muted-foreground">{description}</span>}
       </div>
 
       {terms.length > 0 && (
@@ -263,10 +256,6 @@ function SimpleTermEditor({
 
       {draftError && <p className="text-sm text-destructive">{draftError}</p>}
 
-      <span className="text-xs sm:text-sm text-muted-foreground">
-        一次可输入多个词（逗号、顿号或空格隔开）；按回车、点右侧按钮或离开输入框都会自动加入。
-      </span>
-
       {allowExactToggle && (
         <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
           <input
@@ -275,7 +264,7 @@ function SimpleTermEditor({
             onChange={(e) => setExactWord(e.target.checked)}
             className="size-4 rounded border-input accent-primary cursor-pointer"
           />
-          <span>新添英文词默认启用“整词精确匹配”（只匹配独立单词 AI，不误匹配 MAIL；已有英文词可点标签切换）</span>
+          <span>英文整词匹配</span>
         </label>
       )}
     </div>
@@ -285,11 +274,9 @@ function SimpleTermEditor({
 export function KeywordsEditorCard({
   rawText,
   includeRss,
-  saveStatus = "idle",
   onRawTextChange,
   onKeepaliveFlush,
   onIncludeRssChange,
-  onSave,
 }: KeywordsEditorCardProps) {
   const [mode, setMode] = useState<"visual" | "raw">("visual");
   const [simpleConfig, setSimpleConfig] = useState<SimpleKeywordConfig>(() =>
@@ -449,7 +436,6 @@ export function KeywordsEditorCard({
           </Badge>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <AutoSaveBadge status={saveStatus} onFlush={onSave} />
           {undoStack.length > 0 && mode === "visual" && (
             <Button type="button" size="sm" variant="outline" onClick={handleUndo} className="h-9 px-3">
               <RotateCcw data-icon="inline-start" />
@@ -498,10 +484,7 @@ export function KeywordsEditorCard({
               }}
               className="min-h-72 font-mono text-sm"
             />
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-              <FieldDescription>
-                修改任意内容后会自动保存；不熟悉规则语法建议切回简单填表。
-              </FieldDescription>
+            <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
               <Button type="button" onClick={() => handleModeSwitch("visual")} className="h-10 px-4 text-sm">
                 <ListFilter data-icon="inline-start" />
                 <span>退出专业模式，回到简单填表</span>
@@ -513,7 +496,6 @@ export function KeywordsEditorCard({
             <div className="rounded-xl border border-border bg-muted/20 p-4 sm:p-5">
               <SimpleTermEditor
                 label="全局屏蔽词"
-                description="标题只要包含以下任意词语，就会直接跳过，不进入热点统计和推送。"
                 terms={simpleConfig.globalFilters}
                 placeholder="输入不想看到的词，多个词可用逗号、顿号或空格隔开"
                 addButtonText="添加屏蔽词"
@@ -645,7 +627,6 @@ export function KeywordsEditorCard({
                           <div className="flex flex-col gap-6 border-t border-border bg-muted/15 p-5 sm:p-6">
                             <Field>
                               <FieldLabel>话题名称</FieldLabel>
-                              <FieldDescription>给这组词起个好记的名字，用于统计榜单和报告展示（可留空）</FieldDescription>
                               <Input
                                 value={group.title}
                                 onChange={(e) => updateGroup(group.id, { title: e.target.value }, false)}
@@ -654,8 +635,7 @@ export function KeywordsEditorCard({
                             </Field>
 
                             <SimpleTermEditor
-                              label="想关注的关键词（满足任意一个即命中）"
-                              description="新闻标题出现下面任意一个词就会归入本话题，可一次输入多个词，用逗号、顿号或空格隔开。"
+                              label="想关注的关键词"
                               terms={group.keywords}
                               placeholder="例如：胖东来 于东来"
                               addButtonText="添加关键词"
@@ -678,8 +658,7 @@ export function KeywordsEditorCard({
                             />
 
                             <SimpleTermEditor
-                              label="排除词（包含这些词就跳过，可选）"
-                              description="标题同时出现这些词时不归入本话题，例如关注“苹果”但排除“水果、果园”。"
+                              label="排除词（可选）"
                               terms={group.excludes}
                               placeholder="例如：水果 果园"
                               addButtonText="添加排除词"
@@ -721,7 +700,6 @@ export function KeywordsEditorCard({
                                 <div className="flex flex-col gap-5 rounded-lg border border-border bg-card p-4 sm:p-5">
                                   <SimpleTermEditor
                                     label="必须同时出现的词（可选）"
-                                    description="只有新闻标题把下面所有词都同时包含时，才归入本话题。"
                                     terms={group.required}
                                     placeholder="输入必须同时包含的词"
                                     addButtonText="添加必含词"
@@ -744,7 +722,6 @@ export function KeywordsEditorCard({
 
                                   <Field className="sm:max-w-xs">
                                     <FieldLabel>该话题最多展示几条</FieldLabel>
-                                    <FieldDescription>填 0 或留空表示不限制展示条数</FieldDescription>
                                     <Input
                                       type="text"
                                       inputMode="numeric"
@@ -764,8 +741,7 @@ export function KeywordsEditorCard({
                               )}
                             </div>
 
-                            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-                              <AutoSaveBadge status={saveStatus} onFlush={onSave} />
+                            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
                               <Button type="button" size="sm" variant="outline" onClick={() => toggleExpand(group.id)}>
                                 收起当前话题
                               </Button>

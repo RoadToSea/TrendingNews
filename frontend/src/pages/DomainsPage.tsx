@@ -8,17 +8,20 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Alert, Skeleton } from "@/components/ui/feedback";
+import { useAuth } from "@/context/AuthContext";
 import { useCrawl } from "@/context/CrawlContext";
 import { useSelection } from "@/context/SelectionContext";
-import { cn } from "@/lib/utils";
+import { cn, getTodayIsoDate } from "@/lib/utils";
 
 export function DomainsPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const { setChatOpen, addItem } = useSelection();
   const { crawling, startCrawl, rssVersion, clusterVersion } = useCrawl();
 
   const [activeDomain, setActiveDomain] = useState<string>("");
-  const [dateFilter, setDateFilter] = useState<string>("");
+  const [dateFilter, setDateFilter] = useState<string>(() => getTodayIsoDate());
   const [data, setData] = useState<DomainsResponse | null>(null);
   const [expandedIds, setExpandedIds] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(true);
@@ -281,18 +284,22 @@ export function DomainsPage() {
               <Card className="flex flex-col items-center gap-3 p-8 text-center text-sm text-muted-foreground">
                 <p className="text-base font-medium text-foreground">当日暂无已归类事件</p>
                 <p className="max-w-md text-sm">
-                  请确认已在配置中心启用 AI 模型并点击一次「更新数据」，系统会自动把同一事件的多条报道归并展示。
+                  {isAdmin
+                    ? "请确认已在管理后台启用 AI 模型并点击一次「更新数据」，系统会自动把同一事件的多条报道归并展示。"
+                    : "当日暂无已归类的热点事件，可稍后刷新查看或切换历史日期。"}
                 </p>
-                <div className="flex flex-wrap justify-center gap-2 pt-1">
-                  <Button size="sm" onClick={() => void startCrawl(true)} disabled={crawling}>
-                    <RefreshCw data-icon="inline-start" className={cn(crawling && "animate-spin")} />
-                    <span>{crawling ? "更新中..." : "立即更新数据"}</span>
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => navigate("/settings?tab=ai")}>
-                    <Settings data-icon="inline-start" />
-                    <span>前往配置中心</span>
-                  </Button>
-                </div>
+                {isAdmin && (
+                  <div className="flex flex-wrap justify-center gap-2 pt-1">
+                    <Button size="sm" onClick={() => void startCrawl(true)} disabled={crawling}>
+                      <RefreshCw data-icon="inline-start" className={cn(crawling && "animate-spin")} />
+                      <span>{crawling ? "更新中..." : "立即更新数据"}</span>
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => navigate("/admin?tab=ai")}>
+                      <Settings data-icon="inline-start" />
+                      <span>前往管理后台</span>
+                    </Button>
+                  </div>
+                )}
               </Card>
             )}
           </div>

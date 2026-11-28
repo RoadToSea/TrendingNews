@@ -1,14 +1,129 @@
-"""Domestic hotlist collector adapter wrapping legacy `trendradar.crawler.DataFetcher`."""
+"""Domestic hotlist collector and NewsNow API data fetcher."""
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
-from typing import Any, Callable, Dict, List, Optional, Tuple
+import logging
+import random
+import time
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from urllib.parse import urlparse
 
-from trendradar.crawler.fetcher import DataFetcher
+import requests
 
 from app.services.collectors.base import CollectedItem, CollectionResult
 
+logger = logging.getLogger(__name__)
+
 SourceDoneCallback = Callable[[str, str, List[CollectedItem], Optional[str]], None]
+
+
+class DataFetcher:
+    """HTTP client fetching ranked hotlist payloads from NewsNow-compatible endpoints."""
+
+    DEFAULT_API_URL = "https://newsnow.busiyi.world/api/s"
+    DEFAULT_HEADERS = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        ),
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Connection": "keep-alive",
+        "Cache-Control": "no-cache",
+    }
+
+    def __init__(
+        self,
+        proxy_url: Optional[str] = None,
+        api_url: Optional[str] = None,
+    ) -> None:
+        """Initialize the NewsNow data fetcher.
+
+        Args:
+            proxy_url: Optional HTTP/HTTPS proxy URL.
+            api_url: Optional base API URL overriding `DEFAULT_API_URL`.
+        """
+        self.proxy_url = proxy_url
+        self.api_url = api_url or self.DEFAULT_API_URL
+
+    @staticmethod
+    def _check_domain_safety(
+        items: List[Dict[str, Any]],
+        expected_domain: str,
+    ) -> Optional[str]:
+        """Verify all item URLs use HTTPS and belong to `expected_domain` or its subdomains."""
+        expected = expected_domain.lower().strip()
+        if not expected:
+            return None
+
+        for item in items:
+            for field in ("url", "mobileUrl"):
+                url = item.get(field, "")
+                if not url:
+                    continue
+                parsed = urlparse(url)
+                if parsed.scheme != "https":
+                    return f"{url} (非 HTTPS 或格式异常)"
+                hostname = (parsed.hostname or "").lower()
+                if hostname != expected and not hostname.endswith("." + expected):
+                    return f"{hostname} (来自 {url})"
+        return None
+
+    def fetch_data(
+        self,
+        id_info: Union[str, Tuple[str, str]],
+        max_retries: int = 2,
+        min_retry_wait: int = 3,
+        max_retry_wait: int = 5,
+    ) -> Tuple[Optional[str], str, str]:
+        """Fetch raw JSON payload text for a single platform with exponential jittered retries.
+
+        Args:
+            id_info: Platform ID or `(platform_id, alias)` tuple.
+            max_retries: Maximum retry attempts after initial failure.
+            min_retry_wait: Minimum base wait seconds before retrying.
+            max_retry_wait: Maximum base wait seconds before retrying.
+
+        Returns:
+            Tuple[Optional[str], str, str]: `(raw_text_or_none, platform_id, alias)`.
+        """
+        if isinstance(id_info, tuple):
+            id_value, alias = id_info
+        else:
+            id_value, alias = id_info, id_info
+
+        url = f"{self.api_url}?id={id_value}&latest"
+        proxies = {"http": self.proxy_url, "https": self.proxy_url} if self.proxy_url else None
+
+        retries = 0
+        while retries <= max_retries:
+            try:
+                response = requests.get(
+                    url,
+                    proxies=proxies,
+                    headers=self.DEFAULT_HEADERS,
+                    timeout=10,
+                )
+                response.raise_for_status()
+                data_text = response.text
+                data_json = json.loads(data_text)
+                status = data_json.get("status", "未知")
+                if status not in ("success", "cache"):
+                    raise ValueError(f"响应状态异常: {status}")
+                return data_text, id_value, alias
+            except Exception as exc:
+                retries += 1
+                if retries <= max_retries:
+                    wait_time = random.uniform(min_retry_wait, max_retry_wait) + (
+                        (retries - 1) * random.uniform(1, 2)
+                    )
+                    logger.warning("Request %s failed (%s); retrying in %.2fs", id_value, exc, wait_time)
+                    time.sleep(wait_time)
+                else:
+                    logger.warning("Request %s failed after retries: %s", id_value, exc)
+                    return None, id_value, alias
+
+        return None, id_value, alias
 
 
 class NewsNowCollector:

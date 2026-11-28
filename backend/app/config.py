@@ -1,7 +1,6 @@
 """Application settings loaded from environment variables."""
 
 from pathlib import Path
-from typing import Optional
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -33,25 +32,9 @@ class Settings(BaseSettings):
     admin_user: str = "admin"
     admin_pass: str = ""
     timezone: str = "Asia/Shanghai"
-    agy_bin: str = "agy"
-    agy_proxy: str = ""
-    agy_workspace: Path = Path("data/agy-sandbox")
-    agy_max_concurrency: int = 2
-    agy_timeout_sec: int = 180
     cors_origins: str = ""
-    legacy_repo_root: Optional[Path] = None
     enable_scheduler: bool = True
     session_max_age_sec: int = 604800
-
-    def resolved_legacy_root(self) -> Path:
-        """Resolve the repository root directory containing the legacy `trendradar` package.
-
-        Returns:
-            Path: Explicit `legacy_repo_root` when set, otherwise two levels above `backend/app`.
-        """
-        if self.legacy_repo_root is not None:
-            return self.legacy_repo_root
-        return Path(__file__).resolve().parents[2]
 
     def normalized_base_path(self) -> str:
         """Return the base path normalized with a leading slash and no trailing slash.

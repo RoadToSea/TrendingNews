@@ -10,17 +10,21 @@
 - **报告归档与词频分析**：支持按每日总体、指定领域或单个事件生成结构化分析报告，可拖拽调节报告列表与阅读区比例，并实时统计关键词词组命中情况。
 - **AI 研判助手**：支持随时从页面点选新闻或事件注入上下文发起多轮流式对话，并将研判过程一键沉淀为报告。
 - **邀请码注册与管理后台**：管理员可签发并控制邀请码的有效次数与过期时间，查看注册成员来源并实时启用/停用账号；所有账号均支持自助修改登录密码。
-- **自动化配置中心**：集中配置平台与 RSS/海外数据源、简化词组匹配与过滤规则、多协议 AI 模型（OpenAI / Anthropic / Antigravity）、开场提示词及定时调度任务（自动保存并热生效）。
+- **自动化配置中心与管理后台**：个人中心集中配置关注话题、增量消息推送、历史会话、开场提示词与登录密码；管理员后台统一管理数据源、领域、多协议 AI 模型（Google AI Studio / OpenAI / Anthropic）、全站定时任务、邀请码与成员账号。
+
+详细功能与机制说明请参阅：[完整功能说明文档](docs/FEATURES.md)。
 
 ## 目录结构
 
 ```text
 TrendRadar/
-├── backend/                # FastAPI 后端服务、SQLite 仓储层、采集/归类/AI 服务与 pytest 测试
+├── backend/                # FastAPI 后端服务、SQLite 仓储层、采集/归类/AI/通知服务与 pytest 测试
 ├── frontend/               # React + TypeScript + Vite + Tailwind + shadcn 前端应用
-├── trendradar/             # 后端 legacy_bridge 复用的采集、频率词匹配、时间工具与通知推送核心模块
-├── config/                 # 首次初始化数据库的种子配置（config.yaml、frequency_words.txt）
-└── deploy/                 # 生产环境 Nginx、systemd 与 SQLite 热备份模板
+├── docs/                   # 项目功能说明文档（FEATURES.md）
+├── deploy/                 # 生产环境 Nginx、systemd 与 SQLite 热备份模板
+├── docker-compose.yml      # Docker Compose 前后端编排配置
+├── Dockerfile.backend      # 后端容器镜像构建文件
+└── Dockerfile.frontend     # 前端静态资源与 Nginx 容器构建文件
 ```
 
 ## 本地开发

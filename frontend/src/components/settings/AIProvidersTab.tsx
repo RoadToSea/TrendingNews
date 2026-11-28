@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, Plus, RefreshCw, Trash2, Zap } from "lucide-react";
 import { aiConfigApi } from "@/api/endpoints";
 import type { AIProviderProtocol, AIProviderSlotDTO } from "@/api/types";
@@ -22,22 +22,14 @@ import { cn } from "@/lib/utils";
 const DEFAULT_PROTOCOL_URLS: Record<AIProviderProtocol, string> = {
   openai: "https://api.openai.com/v1",
   anthropic: "https://api.anthropic.com",
-  antigravity: "",
+  gemini: "https://generativelanguage.googleapis.com/v1beta",
 };
 
-const ANTIGRAVITY_FALLBACK_MODELS: string[] = [
-  "gemini-3.8-flash-medium",
-  "gemini-3.8-flash-high",
-  "gemini-3.8-flash-low",
-  "gemini-4-neon-medium",
-  "gemini-4-neon-high",
-  "gemini-4-neon-xhigh",
-  "gemini-4-carbon-medium",
-  "gemini-4-carbon-high",
-  "claude-sonnet-4-6",
-  "claude-opus-4-6-thinking",
-  "gpt-oss-120b-medium",
-];
+const PROTOCOL_LABELS: Record<AIProviderProtocol, string> = {
+  openai: "OpenAI 兼容",
+  anthropic: "Anthropic Messages",
+  gemini: "Google AI Studio (Gemini)",
+};
 
 function mergeUniqueModels(...lists: (string | string[] | undefined)[]): string[] {
   const seen = new Set<string>();
@@ -66,32 +58,28 @@ function isSlotFullyActive(slot: AIProviderSlotDTO): boolean {
 }
 
 function requiresExplicitApiKey(protocol: AIProviderProtocol, url: string): boolean {
-  if (protocol === "antigravity") return false;
   const trimmed = url.trim().toLowerCase();
   if (!trimmed) return true;
-  return trimmed.includes("api.openai.com") || trimmed.includes("api.anthropic.com");
+  if (protocol === "gemini") {
+    return trimmed.includes("generativelanguage.googleapis.com");
+  }
+  if (protocol === "anthropic") {
+    return trimmed.includes("api.anthropic.com");
+  }
+  return trimmed.includes("api.openai.com");
 }
 
-interface AIProvidersTabProps {
-  isActive?: boolean;
-}
-
-export function AIProvidersTab({ isActive = true }: AIProvidersTabProps = {}) {
+export function AIProvidersTab() {
   const [slots, setSlots] = useState<AIProviderSlotDTO[]>([]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [testingId, setTestingId] = useState<number | null>(null);
-  const [switchingModelId, setSwitchingModelId] = useState<number | null>(null);
-
-  const [agyModels, setAgyModels] = useState<string[]>(ANTIGRAVITY_FALLBACK_MODELS);
-  const [loadingAgyModels, setLoadingAgyModels] = useState(false);
-  const fetchedAgyOnceRef = useRef(false);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<AIProviderSlotDTO | null>(null);
   const [name, setName] = useState("");
-  const [protocol, setProtocol] = useState<AIProviderProtocol>("openai");
-  const [baseUrl, setBaseUrl] = useState("");
+  const [protocol, setProtocol] = useState<AIProviderProtocol>("gemini");
+  const [baseUrl, setBaseUrl] = useState(DEFAULT_PROTOCOL_URLS.gemini);
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("");
   const [extraJson, setExtraJson] = useState("{}");
@@ -102,37 +90,6 @@ export function AIProvidersTab({ isActive = true }: AIProvidersTabProps = {}) {
   const [probingDraft, setProbingDraft] = useState(false);
   const [draftStatus, setDraftStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
-
-  const refreshAgyModels = useCallback(async (silent = false) => {
-    setLoadingAgyModels(true);
-    if (!silent) {
-      setError("");
-      setNotice("");
-    }
-    try {
-      const res = await aiConfigApi.fetchModels({
-        protocol: "antigravity",
-        base_url: "",
-        api_key: "",
-        model: "",
-        extra_params: {},
-      });
-      if (res.models.length > 0) {
-        setAgyModels(mergeUniqueModels(res.models, ANTIGRAVITY_FALLBACK_MODELS));
-        if (!silent) {
-          setNotice(`已从 Antigravity CLI 同步 ${res.models.length} 个可用模型`);
-        }
-      } else if (!silent) {
-        setNotice("Antigravity CLI 未返回模型列表，已保留内置常用模型选项");
-      }
-    } catch (err) {
-      if (!silent) {
-        setError(err instanceof Error ? err.message : "刷新 Antigravity 模型列表失败");
-      }
-    } finally {
-      setLoadingAgyModels(false);
-    }
-  }, []);
 
   const loadSlots = useCallback(async () => {
     try {
@@ -147,19 +104,11 @@ export function AIProvidersTab({ isActive = true }: AIProvidersTabProps = {}) {
     void loadSlots();
   }, [loadSlots]);
 
-  useEffect(() => {
-    if (!isActive || fetchedAgyOnceRef.current) return;
-    if (slots.some((s) => s.protocol === "antigravity")) {
-      fetchedAgyOnceRef.current = true;
-      void refreshAgyModels(true);
-    }
-  }, [isActive, slots, refreshAgyModels]);
-
   const openCreate = () => {
     setEditing(null);
     setName("");
-    setProtocol("openai");
-    setBaseUrl(DEFAULT_PROTOCOL_URLS.openai);
+    setProtocol("gemini");
+    setBaseUrl(DEFAULT_PROTOCOL_URLS.gemini);
     setApiKey("");
     setModel("");
     setExtraJson("{}");
@@ -245,9 +194,6 @@ export function AIProvidersTab({ isActive = true }: AIProvidersTabProps = {}) {
         slot_id: editing?.id,
       });
       setAvailableModels(res.models);
-      if (protocol === "antigravity" && res.models.length > 0) {
-        setAgyModels(mergeUniqueModels(res.models, ANTIGRAVITY_FALLBACK_MODELS));
-      }
       if (res.models.length > 0 && !model.trim()) {
         setModel(res.models[0]);
       }
@@ -317,23 +263,6 @@ export function AIProvidersTab({ isActive = true }: AIProvidersTabProps = {}) {
     }
   };
 
-  const handleInlineModelChange = async (slot: AIProviderSlotDTO, nextModel: string) => {
-    const cleanModel = nextModel.trim();
-    if (!cleanModel || cleanModel === slot.model) return;
-    setSwitchingModelId(slot.id);
-    setError("");
-    setNotice("");
-    try {
-      await aiConfigApi.updateProvider(slot.id, { model: cleanModel });
-      setNotice(`已切换「${slot.name}」使用模型为：${cleanModel}`);
-      await loadSlots();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "切换模型失败");
-    } finally {
-      setSwitchingModelId(null);
-    }
-  };
-
   const handleActivate = async (slot: AIProviderSlotDTO) => {
     setError("");
     setNotice("");
@@ -379,21 +308,12 @@ export function AIProvidersTab({ isActive = true }: AIProvidersTabProps = {}) {
     slots.find((s) => s.is_enabled) ??
     null;
   const activeFullyBound = activeSlot ? isSlotFullyActive(activeSlot) : false;
-
-  const formSelectableModels =
-    protocol === "antigravity"
-      ? mergeUniqueModels(availableModels, agyModels, model)
-      : mergeUniqueModels(availableModels);
-
-  const testingAgySlot = testingId !== null && slots.find((s) => s.id === testingId)?.protocol === "antigravity";
+  const formSelectableModels = mergeUniqueModels(availableModels);
 
   return (
     <div className="flex flex-col gap-5">
       {error && <Alert variant="destructive">{error}</Alert>}
       {notice && <Alert variant="success">{notice}</Alert>}
-      {(testingAgySlot || (probingDraft && protocol === "antigravity")) && (
-        <Alert>Antigravity CLI 首次探测通常需 10–20 秒，请耐心等待...</Alert>
-      )}
 
       <Card className="p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -407,7 +327,7 @@ export function AIProvidersTab({ isActive = true }: AIProvidersTabProps = {}) {
             </div>
             {activeSlot ? (
               <p className="font-mono text-sm text-muted-foreground">
-                {activeSlot.name} · {activeSlot.protocol} · {activeSlot.model}
+                {activeSlot.name} · {PROTOCOL_LABELS[activeSlot.protocol]} · {activeSlot.model}
                 {activeSlot.base_url ? ` · ${activeSlot.base_url}` : ""}
               </p>
             ) : (
@@ -429,7 +349,7 @@ export function AIProvidersTab({ isActive = true }: AIProvidersTabProps = {}) {
                 {editing ? `编辑配置：${editing.name}` : "配置 AI 访问接口"}
               </h3>
               <p className="text-sm text-muted-foreground">
-                选择协议、填写必要凭据后可直接测试联通或切换使用模型。
+                支持 Google AI Studio (Gemini)、OpenAI 兼容接口与 Anthropic 接口。
               </p>
             </div>
             <Button size="sm" variant="ghost" onClick={() => setFormOpen(false)}>
@@ -445,7 +365,7 @@ export function AIProvidersTab({ isActive = true }: AIProvidersTabProps = {}) {
                   id="ai-name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="例如：中转站 / DeepSeek / Antigravity"
+                  placeholder="例如：Google AI Studio / DeepSeek"
                 />
               </Field>
               <Field>
@@ -462,18 +382,6 @@ export function AIProvidersTab({ isActive = true }: AIProvidersTabProps = {}) {
                     if (isDefaultOrEmpty) {
                       setBaseUrl(DEFAULT_PROTOCOL_URLS[next]);
                     }
-                    if (next === "antigravity") {
-                      if (!model.trim()) setModel(agyModels[0] || "gemini-3.8-flash-medium");
-                      if (!fetchedAgyOnceRef.current) {
-                        fetchedAgyOnceRef.current = true;
-                        void refreshAgyModels(true);
-                      }
-                    } else if (
-                      agyModels.includes(model.trim()) ||
-                      ANTIGRAVITY_FALLBACK_MODELS.includes(model.trim())
-                    ) {
-                      setModel("");
-                    }
                   }}
                 >
                   <SelectTrigger>
@@ -481,38 +389,42 @@ export function AIProvidersTab({ isActive = true }: AIProvidersTabProps = {}) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
+                      <SelectItem value="gemini">Google AI Studio (Gemini)</SelectItem>
                       <SelectItem value="openai">OpenAI 兼容</SelectItem>
                       <SelectItem value="anthropic">Anthropic Messages</SelectItem>
-                      <SelectItem value="antigravity">Antigravity CLI</SelectItem>
                     </SelectGroup>
                   </SelectContent>
                 </Select>
               </Field>
             </div>
 
-            {protocol !== "antigravity" && (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Field>
-                  <FieldLabel htmlFor="ai-url">API 地址 (URL)</FieldLabel>
-                  <Input
-                    id="ai-url"
-                    value={baseUrl}
-                    onChange={(e) => setBaseUrl(e.target.value)}
-                    placeholder="https://your-relay.example.com/v1"
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="ai-token">访问令牌 (Token / API Key)</FieldLabel>
-                  <Input
-                    id="ai-token"
-                    type="password"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder={editing?.has_api_key ? "保留原掩码即维持现有 Token" : "sk-..."}
-                  />
-                </Field>
-              </div>
-            )}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor="ai-url">API 地址 (URL)</FieldLabel>
+                <Input
+                  id="ai-url"
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder={DEFAULT_PROTOCOL_URLS[protocol]}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="ai-token">访问令牌 (API Key)</FieldLabel>
+                <Input
+                  id="ai-token"
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={
+                    editing?.has_api_key
+                      ? "保留原掩码即维持现有 Token"
+                      : protocol === "gemini"
+                        ? "AIza..."
+                        : "sk-..."
+                  }
+                />
+              </Field>
+            </div>
 
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <Button size="sm" variant="outline" onClick={handleTestDraft} disabled={probingDraft}>
@@ -563,7 +475,7 @@ export function AIProvidersTab({ isActive = true }: AIProvidersTabProps = {}) {
                   id="ai-model"
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
-                  placeholder="可从列表选择，或手动输入模型 ID"
+                  placeholder={protocol === "gemini" ? "例如：gemini-2.5-flash" : "可从列表选择，或手动输入模型 ID"}
                 />
               </Field>
             </div>
@@ -603,8 +515,6 @@ export function AIProvidersTab({ isActive = true }: AIProvidersTabProps = {}) {
         {slots.map((slot) => {
           const isChatDefault = slot.is_enabled && slot.role_bindings.includes("chat_default");
           const isFullyActive = isSlotFullyActive(slot);
-          const cardAgyOptions =
-            slot.protocol === "antigravity" ? mergeUniqueModels([slot.model], agyModels) : [];
 
           return (
             <Card
@@ -619,7 +529,7 @@ export function AIProvidersTab({ isActive = true }: AIProvidersTabProps = {}) {
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold">{slot.name}</span>
-                    <Badge variant="outline">{slot.protocol}</Badge>
+                    <Badge variant="outline">{PROTOCOL_LABELS[slot.protocol] || slot.protocol}</Badge>
                     {isFullyActive && (
                       <Badge variant="default">
                         <CheckCircle2 className="size-3" />
@@ -633,50 +543,10 @@ export function AIProvidersTab({ isActive = true }: AIProvidersTabProps = {}) {
                   </div>
                 </div>
 
-                {slot.protocol === "antigravity" && (
-                  <div className="flex flex-col gap-1.5 pt-1">
-                    <span className="text-sm font-medium text-foreground">快速切换 Antigravity 模型</span>
-                    <div className="flex items-center gap-1.5">
-                      <Select
-                        value={slot.model}
-                        disabled={switchingModelId === slot.id}
-                        onValueChange={(nextModel) => void handleInlineModelChange(slot, nextModel)}
-                      >
-                        <SelectTrigger aria-label={`切换 ${slot.name} 模型`} className="min-w-0 flex-1">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectGroup>
-                            {cardAgyOptions.map((m) => (
-                              <SelectItem key={m} value={m}>
-                                {m}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="outline"
-                        className="size-10"
-                        disabled={loadingAgyModels}
-                        title="刷新 Antigravity 可选模型"
-                        aria-label="刷新 Antigravity 可选模型"
-                        onClick={() => void refreshAgyModels(false)}
-                      >
-                        <RefreshCw className={cn("size-4", loadingAgyModels && "animate-spin")} />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
                 <div className="flex flex-col gap-1 font-mono text-xs sm:text-sm text-muted-foreground">
                   <span>Model: {slot.model}</span>
                   {slot.base_url && <span className="truncate">URL: {slot.base_url}</span>}
-                  <span>
-                    Token: {slot.has_api_key ? slot.api_key_masked : "无（使用本机 Antigravity 登录态）"}
-                  </span>
+                  <span>Token: {slot.has_api_key ? slot.api_key_masked : "未填写"}</span>
                 </div>
               </div>
 

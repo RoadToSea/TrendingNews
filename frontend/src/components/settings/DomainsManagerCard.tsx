@@ -1,28 +1,22 @@
 import { useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { AutoSaveBadge } from "@/components/settings/AutoSaveBadge";
 import type { DomainItemCfg } from "@/components/settings/authoritativePresets";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
-import type { AutoSaveStatus } from "@/hooks/useAutoSave";
 import { cn } from "@/lib/utils";
 
 interface DomainsManagerCardProps {
   domains: DomainItemCfg[];
-  saveStatus?: AutoSaveStatus;
   onChange: (next: DomainItemCfg[], immediate?: boolean) => void;
-  onSave: () => void;
   onError: (msg: string) => void;
 }
 
 export function DomainsManagerCard({
   domains,
-  saveStatus = "idle",
   onChange,
-  onSave,
   onError,
 }: DomainsManagerCardProps) {
   const [createOpen, setCreateOpen] = useState(false);
@@ -90,7 +84,6 @@ export function DomainsManagerCard({
           <p className="text-sm leading-relaxed text-muted-foreground">用于 RSS 归类、热点事件自动归并和趋势页分组查看</p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
-          <AutoSaveBadge status={saveStatus} onFlush={onSave} />
           <Button size="sm" variant="outline" onClick={openCreate}>
             <Plus data-icon="inline-start" />
             <span>{createOpen ? "取消新增" : "新增领域"}</span>
@@ -218,16 +211,13 @@ export function DomainsManagerCard({
                         />
                       </Field>
                     </div>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <AutoSaveBadge status={saveStatus} onFlush={onSave} />
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="outline" onClick={() => setEditingId(null)}>
-                          取消
-                        </Button>
-                        <Button size="sm" onClick={() => handleConfirm(item.id)}>
-                          确认更新
-                        </Button>
-                      </div>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <Button size="sm" variant="outline" onClick={() => setEditingId(null)}>
+                        取消
+                      </Button>
+                      <Button size="sm" onClick={() => handleConfirm(item.id)}>
+                        确认更新
+                      </Button>
                     </div>
                   </div>
                 )}

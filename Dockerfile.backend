@@ -13,10 +13,8 @@ COPY backend/pyproject.toml backend/uv.lock /app/backend/
 RUN cd /app/backend && uv sync --frozen --no-dev
 
 COPY backend/app /app/backend/app
-COPY trendradar /app/trendradar
-COPY config /app/config
 
-RUN mkdir -p /app/data/agy-sandbox /home/liu/.gemini \
+RUN mkdir -p /app/data \
     && chown -R 1000:1000 /app /home/liu
 
 USER 1000:1000
@@ -25,9 +23,7 @@ WORKDIR /app/backend
 ENV HOME=/home/liu \
     PYTHONUNBUFFERED=1 \
     PATH="/app/backend/.venv/bin:/usr/local/bin:${PATH}" \
-    TRENDRADAR_LEGACY_REPO_ROOT=/app \
-    TRENDRADAR_DB_PATH=/app/data/trendradar.db \
-    TRENDRADAR_AGY_WORKSPACE=/app/data/agy-sandbox
+    TRENDRADAR_DB_PATH=/app/data/trendradar.db
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://127.0.0.1:${TRENDRADAR_PORT:-8000}/api/health || exit 1

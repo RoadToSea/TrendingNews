@@ -6,21 +6,17 @@ import {
   ChevronUp,
   FileText,
   Flame,
-  KeyRound,
   Layers,
   LogOut,
-  MessageSquare,
   RefreshCw,
   Settings,
   ShieldCheck,
 } from "lucide-react";
 import { FloatingChatWidget } from "@/components/chat/FloatingChatWidget";
-import { ChangePasswordDialog } from "@/components/layout/ChangePasswordDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
 import { useCrawl } from "@/context/CrawlContext";
-import { useSelection } from "@/context/SelectionContext";
 import { cn } from "@/lib/utils";
 
 const BASE_NAV_ITEMS = [
@@ -40,7 +36,6 @@ const ADMIN_NAV_ITEM = {
 
 export function AppShell() {
   const { user, logout } = useAuth();
-  const { setChatOpen } = useSelection();
   const {
     crawling,
     completedSources,
@@ -54,10 +49,11 @@ export function AppShell() {
   } = useCrawl();
   const navigate = useNavigate();
   const location = useLocation();
-  const isSettingsPage = location.pathname.startsWith("/settings");
+  const isConfigRoute =
+    location.pathname.startsWith("/settings") || location.pathname.startsWith("/admin");
+  const canCrawl = user?.role === "admin" && !isConfigRoute;
 
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [passwordOpen, setPasswordOpen] = useState(false);
 
   const navItems = user?.role === "admin" ? [...BASE_NAV_ITEMS, ADMIN_NAV_ITEM] : BASE_NAV_ITEMS;
 
@@ -107,50 +103,31 @@ export function AppShell() {
           </div>
 
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-            {isSettingsPage && (
+            {canCrawl && (
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setChatOpen(true)}
+                onClick={() => void startCrawl(true)}
+                disabled={crawling}
                 className="px-2.5 sm:px-3"
               >
-                <MessageSquare data-icon="inline-start" />
-                <span className="hidden sm:inline">AI 研判助手</span>
-                <span className="sm:hidden">AI</span>
+                <RefreshCw data-icon="inline-start" className={cn(crawling && "animate-spin")} />
+                <span className="tabular-nums">
+                  {crawling ? (
+                    `${completedSources}/${totalSources || "..."}`
+                  ) : (
+                    <>
+                      更新<span className="hidden sm:inline">数据</span>
+                    </>
+                  )}
+                </span>
               </Button>
             )}
 
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void startCrawl(true)}
-              disabled={crawling}
-              className="px-2.5 sm:px-3"
-            >
-              <RefreshCw data-icon="inline-start" className={cn(crawling && "animate-spin")} />
-              <span className="tabular-nums">
-                {crawling ? (
-                  `${completedSources}/${totalSources || "..."}`
-                ) : (
-                  <>
-                    更新<span className="hidden sm:inline">数据</span>
-                  </>
-                )}
+            <div className="flex items-center gap-1.5 pl-0.5 text-xs text-muted-foreground sm:pl-1.5">
+              <span className="hidden sm:inline max-w-[110px] truncate text-sm font-medium text-foreground/85">
+                {user?.username}
               </span>
-            </Button>
-
-            <div className="flex items-center gap-1 pl-0.5 text-xs text-muted-foreground sm:pl-1.5">
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-9 px-2 text-sm text-foreground/85"
-                onClick={() => setPasswordOpen(true)}
-                title="点击修改登录密码"
-                aria-label="修改密码"
-              >
-                <KeyRound data-icon="inline-start" />
-                <span className="hidden sm:inline max-w-[110px] truncate">{user?.username}</span>
-              </Button>
               <Button
                 size="sm"
                 variant="ghost"
@@ -259,12 +236,6 @@ export function AppShell() {
           ))}
         </div>
       </nav>
-
-      <ChangePasswordDialog
-        open={passwordOpen}
-        onOpenChange={setPasswordOpen}
-        username={user?.username}
-      />
 
       <FloatingChatWidget />
     </div>

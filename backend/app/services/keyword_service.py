@@ -1,9 +1,52 @@
-"""Keyword rule parser and matching service reusing `trendradar.core.frequency` primitives."""
+"""Keyword rule parser and matching service."""
 
+import logging
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Union
 
-from trendradar.core.frequency import _parse_word, _word_matches
+logger = logging.getLogger(__name__)
+
+
+def _parse_word(word: str) -> Dict[str, Any]:
+    """Parse a single keyword line supporting `=> alias` and `/regex/[flags]`."""
+    display_name = None
+    if "=>" in word:
+        parts = re.split(r"\s*=>\s*", word, 1)
+        word_config = parts[0].strip()
+        if len(parts) > 1 and parts[1].strip():
+            display_name = parts[1].strip()
+    else:
+        word_config = word.strip()
+
+    regex_match = re.match(r"^/(.+)/[a-z]*$", word_config)
+    if regex_match:
+        pattern_str = regex_match.group(1)
+        try:
+            pattern = re.compile(pattern_str, re.IGNORECASE)
+            return {
+                "word": pattern_str,
+                "is_regex": True,
+                "pattern": pattern,
+                "display_name": display_name,
+            }
+        except re.error as exc:
+            logger.warning("Invalid regex pattern '/%s/': %s", pattern_str, exc)
+
+    return {
+        "word": word_config,
+        "is_regex": False,
+        "pattern": None,
+        "display_name": display_name,
+    }
+
+
+def _word_matches(word_config: Union[str, Dict[str, Any]], title_lower: str) -> bool:
+    """Return True when `word_config` matches the lowercased title."""
+    if isinstance(word_config, str):
+        return word_config.lower() in title_lower
+    if word_config.get("is_regex") and word_config.get("pattern"):
+        return bool(word_config["pattern"].search(title_lower))
+    return str(word_config["word"]).lower() in title_lower
 
 
 def parse_keywords_text(raw_text: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:

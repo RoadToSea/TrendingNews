@@ -208,7 +208,7 @@ export interface ReportListResponse {
   total: number;
 }
 
-export type AIProviderProtocol = "openai" | "anthropic" | "antigravity";
+export type AIProviderProtocol = "openai" | "anthropic" | "gemini";
 export type AIProviderRole = "chat_default" | "summary_report" | "event_cluster";
 
 export interface AIProviderSlotDTO {

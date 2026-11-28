@@ -4,7 +4,7 @@
 
 ## 1. 服务器前置准备
 
-1. **增加 2GB Swap 缓冲**（保护 3.7 GiB 内存环境在并发调用 `agy` 或依赖安装时不触发 OOM）：
+1. **增加 2GB Swap 缓冲**（保护低内存环境在依赖安装时不触发 OOM）：
    ```bash
    sudo fallocate -l 2G /swapfile
    sudo chmod 600 /swapfile
@@ -17,7 +17,7 @@
    uv python install 3.12
    sudo apt-get update && sudo apt-get install -y sqlite3
    mkdir -p /home/liu/trendradar/backend /home/liu/trendradar/frontend-dist \
-            /home/liu/trendradar-data/agy-sandbox /home/liu/trendradar-backups
+            /home/liu/trendradar-data /home/liu/trendradar-backups
    ```
 
 ## 2. 本地构建前端并同步代码
@@ -31,8 +31,6 @@ $env:VITE_BASE_PATH='/radar/'; pnpm run build
 
 将以下目录同步至服务器 `/home/liu/trendradar/`：
 - `backend/` -> `/home/liu/trendradar/backend/`
-- `trendradar/` -> `/home/liu/trendradar/trendradar/`
-- `config/`（仅初始种子需要）-> `/home/liu/trendradar/config/`
 - `frontend/dist/` -> `/home/liu/trendradar/frontend-dist/`
 
 ## 3. 配置后端环境与 systemd 服务

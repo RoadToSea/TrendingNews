@@ -4,7 +4,7 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.deps import get_chat_service, get_current_user, get_gateway_service
+from app.api.deps import get_chat_service, get_current_user, get_gateway_service, require_admin
 from app.models import (
     AIProviderCreateRequest,
     AIProviderModelsResponse,
@@ -30,7 +30,7 @@ router = APIRouter(prefix="/api", tags=["ai-config"])
 
 @router.get("/ai-providers", response_model=List[AIProviderSlotDTO])
 def list_ai_providers(
-    _: UserRecord = Depends(get_current_user),
+    _: UserRecord = Depends(require_admin),
     gateway: AIGatewayService = Depends(get_gateway_service),
 ) -> List[AIProviderSlotDTO]:
     """List all saved AI provider configurations with masked API keys."""
@@ -40,7 +40,7 @@ def list_ai_providers(
 @router.post("/ai-providers", response_model=AIProviderSlotDTO)
 def create_ai_provider(
     body: AIProviderCreateRequest,
-    _: UserRecord = Depends(get_current_user),
+    _: UserRecord = Depends(require_admin),
     gateway: AIGatewayService = Depends(get_gateway_service),
 ) -> AIProviderSlotDTO:
     """Create a new AI provider configuration with encrypted API credentials."""
@@ -53,7 +53,7 @@ def create_ai_provider(
 @router.post("/ai-providers/test", response_model=AIProviderTestResponse)
 async def test_draft_ai_provider(
     body: AIProviderProbeRequest,
-    _: UserRecord = Depends(get_current_user),
+    _: UserRecord = Depends(require_admin),
     gateway: AIGatewayService = Depends(get_gateway_service),
 ) -> AIProviderTestResponse:
     """Test connectivity for an unsaved AI form configuration (URL + Token + optional model)."""
@@ -63,7 +63,7 @@ async def test_draft_ai_provider(
 @router.post("/ai-providers/models", response_model=AIProviderModelsResponse)
 async def fetch_ai_provider_models(
     body: AIProviderProbeRequest,
-    _: UserRecord = Depends(get_current_user),
+    _: UserRecord = Depends(require_admin),
     gateway: AIGatewayService = Depends(get_gateway_service),
 ) -> AIProviderModelsResponse:
     """Fetch available models exposed by the given AI endpoint and token."""
@@ -77,7 +77,7 @@ async def fetch_ai_provider_models(
 def update_ai_provider(
     slot_id: int,
     body: AIProviderUpdateRequest,
-    _: UserRecord = Depends(get_current_user),
+    _: UserRecord = Depends(require_admin),
     gateway: AIGatewayService = Depends(get_gateway_service),
 ) -> AIProviderSlotDTO:
     """Update a saved AI provider configuration."""
@@ -92,7 +92,7 @@ def update_ai_provider(
 @router.post("/ai-providers/{slot_id}/activate", response_model=AIProviderSlotDTO)
 def activate_ai_provider(
     slot_id: int,
-    _: UserRecord = Depends(get_current_user),
+    _: UserRecord = Depends(require_admin),
     gateway: AIGatewayService = Depends(get_gateway_service),
 ) -> AIProviderSlotDTO:
     """Set a saved AI provider as the current active model across chat, reports, and clustering."""
@@ -105,7 +105,7 @@ def activate_ai_provider(
 @router.delete("/ai-providers/{slot_id}")
 def delete_ai_provider(
     slot_id: int,
-    _: UserRecord = Depends(get_current_user),
+    _: UserRecord = Depends(require_admin),
     gateway: AIGatewayService = Depends(get_gateway_service),
 ) -> dict:
     """Delete an AI provider configuration."""
@@ -119,7 +119,7 @@ def delete_ai_provider(
 @router.post("/ai-providers/{slot_id}/test", response_model=AIProviderTestResponse)
 async def test_ai_provider(
     slot_id: int,
-    _: UserRecord = Depends(get_current_user),
+    _: UserRecord = Depends(require_admin),
     gateway: AIGatewayService = Depends(get_gateway_service),
 ) -> AIProviderTestResponse:
     """Run a live connectivity test against a saved AI provider configuration."""

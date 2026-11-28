@@ -64,7 +64,7 @@ class StreamEvent:
 
 
 class LLMGateway(Protocol):
-    """Unified asynchronous interface implemented by OpenAI, Anthropic, and Antigravity adapters."""
+    """Unified asynchronous interface implemented by OpenAI, Anthropic, and Gemini adapters."""
 
     async def stream_chat(
         self,

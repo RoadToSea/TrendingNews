@@ -20,7 +20,6 @@ def test_settings(tmp_path: Path) -> Settings:
         admin_user="admin",
         admin_pass="StrongPass123!",
         timezone="Asia/Shanghai",
-        agy_workspace=tmp_path / "agy-sandbox",
         enable_scheduler=False,
     )
 

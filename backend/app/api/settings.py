@@ -13,6 +13,7 @@ from app.api.deps import (
     get_current_user,
     get_settings_service,
     get_webhook_service,
+    require_admin,
 )
 from app.models import (
     CrawlTriggerRequest,
@@ -26,6 +27,7 @@ from app.repositories.user_repo import UserRecord
 from app.services.cluster_service import ClusterService
 from app.services.crawl_service import CrawlAlreadyRunningError, CrawlProgressEvent, CrawlService
 from app.services.settings_service import (
+    USER_SECTIONS,
     SettingsNotFoundError,
     SettingsService,
     SettingsValidationError,
@@ -42,12 +44,24 @@ def _format_sse(event_name: str, payload: Dict[str, Any]) -> str:
 @router.get("/settings/{section}", response_model=SettingsSectionResponse)
 def get_settings_section(
     section: str,
-    _: UserRecord = Depends(get_current_user),
+    current_user: UserRecord = Depends(get_current_user),
     settings_service: SettingsService = Depends(get_settings_service),
 ) -> SettingsSectionResponse:
-    """Retrieve a masked configuration section."""
+    """Retrieve a masked configuration section respecting user/admin scope."""
     try:
-        payload, updated_at = settings_service.get_public_section(section)
+        if section in USER_SECTIONS:
+            payload, updated_at = settings_service.get_user_public_section(
+                current_user.id,
+                section,
+                user_role=current_user.role,
+            )
+        else:
+            if section != "domains" and current_user.role != "admin":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="仅管理员可访问系统级配置",
+                )
+            payload, updated_at = settings_service.get_public_section(section)
     except SettingsNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return SettingsSectionResponse(section=section, payload=payload, updated_at=updated_at)
@@ -58,12 +72,24 @@ def update_settings_section(
     section: str,
     body: SettingsUpdateRequest,
     request: Request,
-    _: UserRecord = Depends(get_current_user),
+    current_user: UserRecord = Depends(get_current_user),
     settings_service: SettingsService = Depends(get_settings_service),
 ) -> SettingsSectionResponse:
-    """Validate and persist updates to a configuration section."""
+    """Validate and persist updates to a user-scoped or admin-scoped configuration section."""
     try:
-        payload, updated_at = settings_service.update_section(section, body.payload)
+        if section in USER_SECTIONS:
+            payload, updated_at = settings_service.update_user_section(
+                current_user.id,
+                section,
+                body.payload,
+            )
+        else:
+            if current_user.role != "admin":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="仅管理员可修改系统级配置",
+                )
+            payload, updated_at = settings_service.update_section(section, body.payload)
     except SettingsNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except SettingsValidationError as exc:
@@ -78,12 +104,16 @@ def update_settings_section(
 @router.post("/webhooks/test", response_model=WebhookTestResponse)
 def test_webhooks(
     body: WebhookTestRequest,
-    _: UserRecord = Depends(get_current_user),
+    current_user: UserRecord = Depends(get_current_user),
     webhook_service: WebhookService = Depends(get_webhook_service),
 ) -> WebhookTestResponse:
-    """Send a test notification to one specified channel or all configured channels."""
+    """Send a test notification to the calling user's configured webhook channels."""
     try:
-        results = webhook_service.send_test(channel=body.channel)
+        results = webhook_service.send_test(
+            current_user.id,
+            channel=body.channel,
+            user_role=current_user.role,
+        )
     except WebhookConfigError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return WebhookTestResponse(results=results)
@@ -92,7 +122,7 @@ def test_webhooks(
 @router.post("/jobs/crawl/trigger", response_model=CrawlTriggerResponse)
 async def trigger_crawl(
     body: CrawlTriggerRequest,
-    __: UserRecord = Depends(get_current_user),
+    __: UserRecord = Depends(require_admin),
     crawl_service: CrawlService = Depends(get_crawl_service),
     cluster_service: ClusterService = Depends(get_cluster_service),
 ) -> CrawlTriggerResponse:
@@ -114,7 +144,7 @@ async def trigger_crawl(
 @router.post("/jobs/crawl/stream")
 async def stream_crawl(
     body: CrawlTriggerRequest,
-    __: UserRecord = Depends(get_current_user),
+    __: UserRecord = Depends(require_admin),
     crawl_service: CrawlService = Depends(get_crawl_service),
     cluster_service: ClusterService = Depends(get_cluster_service),
 ) -> StreamingResponse:

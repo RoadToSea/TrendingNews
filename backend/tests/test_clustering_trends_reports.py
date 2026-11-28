@@ -225,18 +225,22 @@ def test_cross_lingual_clustering_trends_and_report_modes(auth_client: TestClien
 
 def test_cluster_error_surfaces_in_last_error_and_crawl_summary(auth_client: TestClient) -> None:
     import asyncio
+    from datetime import datetime
+    import zoneinfo
+
     from app.models import CrawlTriggerResponse
 
     for slot in auth_client.get("/api/ai-providers").json():
         auth_client.put(f"/api/ai-providers/{slot['id']}", json={"role_bindings": []})
 
+    today = datetime.now(zoneinfo.ZoneInfo("Asia/Shanghai")).date().isoformat()
     _seed_day_items(
         auth_client,
-        "2026-11-23",
+        today,
         [("zhihu", "知乎", "未聚类测试话题", "https://zhihu.com/unlinked-err", 1, 20.0)],
     )
     cluster_svc = auth_client.app.state.cluster_service
-    assert asyncio.run(cluster_svc.run_incremental_clustering("2026-11-23")) == 0
+    assert asyncio.run(cluster_svc.run_incremental_clustering(today)) == 0
     assert cluster_svc.last_error is not None and "event_cluster" in cluster_svc.last_error
 
     class _FailingClusterGateway:

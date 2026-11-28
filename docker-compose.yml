@@ -14,8 +14,6 @@ services:
       TZ: Asia/Shanghai
     volumes:
       - ${TRENDRADAR_DATA_DIR:-/home/liu/trendradar-data}:/app/data
-      - ${HOST_AGY_BIN:-/home/liu/.local/bin/agy}:/usr/local/bin/agy:ro
-      - ${HOST_GEMINI_DIR:-/home/liu/.gemini}:/home/liu/.gemini
 
   frontend:
     build:

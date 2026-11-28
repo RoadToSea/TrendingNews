@@ -94,9 +94,10 @@ def test_invite_lifecycle_registration_and_atomic_quota_protection(auth_client: 
         assert reg_ok.json()["user"]["role"] == "user"
         assert "HttpOnly" in reg_ok.headers.get("set-cookie", "")
 
-        # Auto-logged-in user can reach /me, /settings, and change password, NOT /admin/*
+        # Auto-logged-in user can reach /me, personal /settings, and change password, NOT /admin/*
         assert reg_client.get("/api/auth/me").json()["role"] == "user"
-        assert reg_client.get("/api/settings/platforms").status_code == 200
+        assert reg_client.get("/api/settings/keywords").status_code == 200
+        assert reg_client.get("/api/settings/platforms").status_code == 403
         assert reg_client.get("/api/admin/invite-codes").status_code == 403
         assert reg_client.post("/api/admin/invite-codes", json={"max_uses": 1}).status_code == 403
         assert reg_client.get("/api/admin/users").status_code == 403

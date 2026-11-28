@@ -1,12 +1,9 @@
 import { useEffect, useState } from "react";
-import { authApi, settingsApi } from "@/api/endpoints";
-import { AutoSaveBadge } from "@/components/settings/AutoSaveBadge";
-import { Button } from "@/components/ui/button";
+import { settingsApi } from "@/api/endpoints";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/feedback";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { useAutoSave } from "@/hooks/useAutoSave";
 
 interface SchedulePair {
@@ -16,19 +13,16 @@ interface SchedulePair {
 
 const TIME_PATTERN = /^([01]?\d|2[0-3]):[0-5]\d$/;
 
-interface SystemScheduleTabProps {
+interface AdminScheduleTabProps {
   onDirtyChange?: (dirty: boolean) => void;
 }
 
-export function SystemScheduleTab({ onDirtyChange }: SystemScheduleTabProps = {}) {
+export function AdminScheduleTab({ onDirtyChange }: AdminScheduleTabProps = {}) {
   const [schedule, setSchedule] = useState<Record<string, unknown>>({});
   const [trends, setTrends] = useState<Record<string, unknown>>({});
   const [intervalDraft, setIntervalDraft] = useState("30");
   const [retentionDraft, setRetentionDraft] = useState("30");
   const [topNDraft, setTopNDraft] = useState("10");
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
   const scheduleAuto = useAutoSave<SchedulePair>({
@@ -105,40 +99,23 @@ export function SystemScheduleTab({ onDirtyChange }: SystemScheduleTabProps = {}
     scheduleAuto.queueSave({ schedule, trends: nextTrends }, { immediate });
   };
 
-  const handleChangePassword = async () => {
-    setError("");
-    setNotice("");
-    try {
-      await authApi.changePassword(currentPassword, newPassword);
-      setCurrentPassword("");
-      setNewPassword("");
-      setNotice("登录密码已更新");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "修改密码失败");
-    }
-  };
-
   return (
     <div className="flex flex-col gap-5">
       {(error || scheduleAuto.error) && (
         <Alert variant="destructive">{error || scheduleAuto.error}</Alert>
       )}
-      {notice && <Alert variant="success">{notice}</Alert>}
 
       <Card className="p-4 sm:p-5">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h3 className="text-base font-semibold">定时调度与趋势指标配置</h3>
-            <p className="text-sm text-muted-foreground">修改后自动保存并实时热更新后台定时任务，无需重启服务</p>
-          </div>
-          <AutoSaveBadge status={scheduleAuto.status} onFlush={() => void scheduleAuto.flushNow()} />
+        <div className="mb-3">
+          <h3 className="text-base font-semibold">全站定时采集与趋势参数</h3>
+          <p className="text-sm text-muted-foreground">修改后自动实时热更新后台定时任务，无需重启服务</p>
         </div>
 
         <FieldGroup>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field>
               <FieldLabel>自动更新间隔（分钟）</FieldLabel>
-              <FieldDescription>最低 5 分钟，建议设为 30 分钟</FieldDescription>
+              <FieldDescription>最低 5 分钟，建议设为 30 分钟；每次采集后会自动向开启推送的成员分发增量通知</FieldDescription>
               <Input
                 type="text"
                 inputMode="numeric"
@@ -199,48 +176,6 @@ export function SystemScheduleTab({ onDirtyChange }: SystemScheduleTabProps = {}
                 }}
               />
             </Field>
-          </div>
-
-          <div className="flex items-center justify-between gap-3 pt-1">
-            <span className="text-sm font-medium">每次更新数据后自动推送消息通知</span>
-            <Switch
-              checked={Boolean(schedule.push_on_crawl)}
-              onCheckedChange={(v) => updateSchedule({ ...schedule, push_on_crawl: v }, true)}
-            />
-          </div>
-        </FieldGroup>
-      </Card>
-
-      <Card className="p-4 sm:p-5">
-        <h3 className="mb-3 text-base font-semibold">修改当前账号登录密码</h3>
-        <FieldGroup>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel>当前密码</FieldLabel>
-              <Input
-                type="password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-              />
-            </Field>
-            <Field>
-              <FieldLabel>新密码（至少 8 位）</FieldLabel>
-              <Input
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-              />
-            </Field>
-          </div>
-          <div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleChangePassword}
-              disabled={!currentPassword || newPassword.length < 8}
-            >
-              更新密码
-            </Button>
           </div>
         </FieldGroup>
       </Card>

@@ -98,13 +98,17 @@ def list_rss(
 @router.get("/keywords/stats", response_model=KeywordStatsResponse)
 def keyword_stats(
     hours: int = Query(default=24, ge=1, le=168),
-    _: UserRecord = Depends(get_current_user),
+    current_user: UserRecord = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
     settings_service: SettingsService = Depends(get_settings_service),
     news_repo: NewsRepository = Depends(get_news_repo),
 ) -> KeywordStatsResponse:
-    """Compute keyword group matches across recent hotlist and RSS items."""
-    kw_cfg = settings_service.get_internal_section("keywords")
+    """Compute keyword group matches using the current user's personal keyword rules."""
+    kw_cfg = settings_service.get_user_internal_section(
+        current_user.id,
+        "keywords",
+        user_role=current_user.role,
+    )
     raw_text = str(kw_cfg.get("raw_text") or "")
     include_rss = bool(kw_cfg.get("include_rss", True))
     since_iso = _since_hours_iso(settings.timezone, hours)

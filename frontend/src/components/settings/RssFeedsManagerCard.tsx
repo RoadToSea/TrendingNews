@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { Code2, Pencil, Plus, Search, SlidersHorizontal, Sparkles, Trash2 } from "lucide-react";
-import { AutoSaveBadge } from "@/components/settings/AutoSaveBadge";
 import {
   AUTHORITATIVE_RSS_PRESETS,
   isDeprecatedFeedUrl,
@@ -22,15 +21,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import type { AutoSaveStatus } from "@/hooks/useAutoSave";
 import { cn } from "@/lib/utils";
 
 interface RssFeedsManagerCardProps {
   config: Record<string, unknown>;
   domains: DomainItemCfg[];
-  saveStatus?: AutoSaveStatus;
   onChange: (next: Record<string, unknown>, immediate?: boolean) => void;
-  onSave: () => void;
   onError: (msg: string) => void;
 }
 
@@ -49,8 +45,6 @@ interface RssFeedFormProps {
   submitLabel: string;
   values: FeedFormValues;
   domainOptions: { id: string; label: string }[];
-  saveStatus?: AutoSaveStatus;
-  onSave?: () => void;
   onChange: (patch: Partial<FeedFormValues>) => void;
   onCancel: () => void;
   onSubmit: () => void;
@@ -61,8 +55,6 @@ function RssFeedForm({
   submitLabel,
   values,
   domainOptions,
-  saveStatus = "idle",
-  onSave,
   onChange,
   onCancel,
   onSubmit,
@@ -138,7 +130,6 @@ function RssFeedForm({
         <div className="flex flex-wrap items-center gap-3">
           <Switch checked={values.enabled} onCheckedChange={(v) => onChange({ enabled: v })} />
           <span className="text-sm font-medium">启用此订阅</span>
-          <AutoSaveBadge status={saveStatus} onFlush={onSave} />
         </div>
         <div className="flex gap-2">
           <Button type="button" size="sm" variant="outline" onClick={onCancel}>
@@ -178,9 +169,7 @@ function generateFeedSlug(name: string, url: string, existingIds: Set<string>): 
 export function RssFeedsManagerCard({
   config,
   domains,
-  saveStatus = "idle",
   onChange,
-  onSave,
   onError,
 }: RssFeedsManagerCardProps) {
   const [globalOpen, setGlobalOpen] = useState(false);
@@ -438,7 +427,6 @@ export function RssFeedsManagerCard({
           </Badge>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
-          <AutoSaveBadge status={saveStatus} onFlush={onSave} />
           <Button size="sm" variant="outline" onClick={() => setPresetOpen((v) => !v)}>
             <Sparkles data-icon="inline-start" />
             <span>{presetOpen ? "收起预设" : "权威媒体预设"}</span>
@@ -581,8 +569,6 @@ export function RssFeedsManagerCard({
               submitLabel="确认添加"
               values={formValues}
               domainOptions={domainOptions}
-              saveStatus={saveStatus}
-              onSave={onSave}
               onChange={patchForm}
               onCancel={() => setCreateOpen(false)}
               onSubmit={() => handleSubmitForm(null)}
@@ -700,8 +686,6 @@ export function RssFeedsManagerCard({
                           submitLabel="确认更新"
                           values={formValues}
                           domainOptions={domainOptions}
-                          saveStatus={saveStatus}
-                          onSave={onSave}
                           onChange={patchForm}
                           onCancel={() => setEditingIdx(null)}
                           onSubmit={() => handleSubmitForm(idx)}

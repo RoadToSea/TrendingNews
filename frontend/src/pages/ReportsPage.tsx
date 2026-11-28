@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ArrowLeft, ExternalLink, Plus, Sparkles, Trash2 } from "lucide-react";
 import { feedApi, reportsApi, settingsApi } from "@/api/endpoints";
@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ResizableSplitPane } from "@/components/ui/resizable-split-pane";
-import { cn, formatShortTime } from "@/lib/utils";
+import { cn, formatShortTime, getTodayIsoDate } from "@/lib/utils";
 
 const REPORT_TYPE_LABEL: Record<ReportType, string> = {
   daily_overall: "每日总体",
@@ -60,9 +60,10 @@ export function ReportsPage() {
   const [genOpen, setGenOpen] = useState(false);
   const [genMode, setGenMode] = useState<"daily_overall" | "domain_trend">("daily_overall");
   const [genDomain, setGenDomain] = useState("AI大模型");
-  const [genDate, setGenDate] = useState("");
+  const [genDate, setGenDate] = useState(() => getTodayIsoDate());
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState("");
+  const suppressAutoSelectRef = useRef(false);
 
   useEffect(() => {
     settingsApi
@@ -96,6 +97,9 @@ export function ReportsPage() {
           const single = await reportsApi.get(initialId).catch(() => null);
           if (single) setActiveReport(single);
         }
+      } else if (suppressAutoSelectRef.current) {
+        suppressAutoSelectRef.current = false;
+        setActiveReport(null);
       } else if (res.items.length > 0 && !activeReport) {
         setActiveReport(res.items[0]);
       }
@@ -183,6 +187,7 @@ export function ReportsPage() {
           size="sm"
           onClick={() => {
             setGenError("");
+            setGenDate(getTodayIsoDate());
             setGenOpen(true);
           }}
         >
@@ -202,7 +207,18 @@ export function ReportsPage() {
         <TabsContent value="archive" className="flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
             <div className="min-w-0 sm:w-40">
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
+              <Select
+                value={typeFilter}
+                onValueChange={(nextType) => {
+                  suppressAutoSelectRef.current = true;
+                  setTypeFilter(nextType);
+                  setMobileView("list");
+                  setActiveReport(null);
+                  if (searchParams.has("id")) {
+                    setSearchParams({}, { replace: true });
+                  }
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>

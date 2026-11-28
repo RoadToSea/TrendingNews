@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as echarts from "echarts";
+import { RotateCcw } from "lucide-react";
 import type { TrendSeriesDTO } from "@/api/types";
+import { Button } from "@/components/ui/button";
 import {
   buildUniqueSeriesName,
   computeAdaptiveYBounds,
@@ -34,6 +36,37 @@ interface ChartPointPayload {
   dx: number;
   symbolSize?: number;
   label?: Record<string, unknown>;
+}
+
+const MULTI_DAY_JITTER = [0, -0.09, 0.09, -0.18, 0.18, -0.26, 0.26];
+
+function computeMultiDayOverlapOffsets(
+  series: TrendSeriesDTO[],
+  anchorDate: string,
+): Map<string, number> {
+  const buckets = new Map<string, number[]>();
+  for (const item of series) {
+    if (!item.is_multi_day) continue;
+    for (const pt of item.points) {
+      const dayOffset = anchorDate ? diffDaysUtc(pt.date, anchorDate) : 0;
+      const yBucket = Math.round(pt.hot_index / 2);
+      const key = `${dayOffset}:${yBucket}`;
+      const list = buckets.get(key) ?? [];
+      list.push(item.event_id);
+      buckets.set(key, list);
+    }
+  }
+
+  const offsets = new Map<string, number>();
+  for (const [bucketKey, eventIds] of buckets) {
+    if (eventIds.length <= 1) continue;
+    const dayOffset = bucketKey.split(":")[0];
+    eventIds.forEach((eid, idx) => {
+      const dx = MULTI_DAY_JITTER[idx % MULTI_DAY_JITTER.length];
+      offsets.set(`${eid}:${dayOffset}`, dx);
+    });
+  }
+  return offsets;
 }
 
 function formatTooltipHtml(
@@ -94,20 +127,25 @@ function buildMultiDaySeriesOption(
   color: string,
   anchorDate: string,
   isCompact: boolean,
+  overlapOffsets: Map<string, number>,
 ): echarts.SeriesOption {
   const sortedPoints = [...item.points].sort((a, b) => a.date.localeCompare(b.date));
-  const data: ChartPointPayload[] = sortedPoints.map((pt) => ({
-    value: [anchorDate ? diffDaysUtc(pt.date, anchorDate) : 0, pt.hot_index],
-    eventId: item.event_id,
-    date: pt.date,
-    hotIndex: pt.hot_index,
-    canonicalTitle: item.canonical_title,
-    domain: item.domain,
-    dailyRank: pt.daily_rank,
-    platformCount: pt.platform_count,
-    velocity: pt.velocity,
-    dx: 0,
-  }));
+  const data: ChartPointPayload[] = sortedPoints.map((pt) => {
+    const dayOffset = anchorDate ? diffDaysUtc(pt.date, anchorDate) : 0;
+    const dx = overlapOffsets.get(`${item.event_id}:${dayOffset}`) ?? 0;
+    return {
+      value: [dayOffset + dx, pt.hot_index],
+      eventId: item.event_id,
+      date: pt.date,
+      hotIndex: pt.hot_index,
+      canonicalTitle: item.canonical_title,
+      domain: item.domain,
+      dailyRank: pt.daily_rank,
+      platformCount: pt.platform_count,
+      velocity: pt.velocity,
+      dx,
+    };
+  });
 
   return {
     name: seriesName,
@@ -115,10 +153,10 @@ function buildMultiDaySeriesOption(
     smooth: 0.25,
     connectNulls: true,
     symbol: "circle",
-    symbolSize: isCompact ? 9 : 8,
+    symbolSize: isCompact ? 10 : 9,
     lineStyle: { width: 2.5, color },
     itemStyle: { color, borderColor: "#ffffff", borderWidth: 2 },
-    emphasis: { focus: "series" },
+    emphasis: { focus: "series", scale: 1.3 },
     z: 3,
     data,
   };
@@ -212,6 +250,7 @@ function buildChartOption(
     yMax,
     isCompact,
   });
+  const multiOverlapOffsets = computeMultiDayOverlapOffsets(series, anchorDate);
 
   const usedNames = new Set<string>();
   const eventSeriesNames: string[] = [];
@@ -223,7 +262,14 @@ function buildChartOption(
     eventSeriesNames.push(seriesName);
     const color = getEventColor(idx);
     if (item.is_multi_day) {
-      return buildMultiDaySeriesOption(item, seriesName, color, anchorDate, isCompact);
+      return buildMultiDaySeriesOption(
+        item,
+        seriesName,
+        color,
+        anchorDate,
+        isCompact,
+        multiOverlapOffsets,
+      );
     }
     return buildSingleDaySeriesOption(
       item,
@@ -262,6 +308,26 @@ function buildChartOption(
     grid: isCompact
       ? { left: 42, right: 16, top: 48, bottom: 56 }
       : { left: 54, right: 28, top: 52, bottom: 60 },
+    dataZoom: [
+      {
+        type: "inside",
+        xAxisIndex: 0,
+        filterMode: "none",
+        zoomOnMouseWheel: true,
+        moveOnMouseMove: true,
+        moveOnMouseWheel: false,
+        preventDefaultMouseMove: true,
+      },
+      {
+        type: "inside",
+        yAxisIndex: 0,
+        filterMode: "none",
+        zoomOnMouseWheel: true,
+        moveOnMouseMove: true,
+        moveOnMouseWheel: false,
+        preventDefaultMouseMove: true,
+      },
+    ],
     xAxis: {
       type: "value",
       min: -axisLimit,
@@ -300,7 +366,7 @@ function buildChartOption(
   };
 }
 
-/** Interactive today-centered trend chart distinguishing single-day and multi-day events by color. */
+/** Interactive today-centered trend chart with pan/zoom, reset, and overlap dodge. */
 export function TrendChart({ dates, series, onSelectPoint, domainNameMap }: TrendChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
@@ -326,11 +392,17 @@ export function TrendChart({ dates, series, onSelectPoint, domainNameMap }: Tren
     };
   }, []);
 
+  const applyOption = useCallback(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    chart.setOption(buildChartOption(dates, series, isCompact, domainNameMap), true);
+  }, [dates, series, isCompact, domainNameMap]);
+
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
 
-    chart.setOption(buildChartOption(dates, series, isCompact, domainNameMap), true);
+    applyOption();
     chart.off("click");
     chart.on("click", (params: unknown) => {
       const data = (params as { data?: ChartPointPayload }).data;
@@ -338,7 +410,24 @@ export function TrendChart({ dates, series, onSelectPoint, domainNameMap }: Tren
         onSelectPoint(data.eventId, data.date);
       }
     });
-  }, [dates, series, onSelectPoint, isCompact, domainNameMap]);
+  }, [applyOption, onSelectPoint]);
 
-  return <div ref={containerRef} className="h-[340px] sm:h-[460px] w-full" />;
+  return (
+    <div className="relative">
+      <div className="absolute right-2 top-1 z-10 flex items-center gap-1.5">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-7 bg-card/90 px-2 text-xs backdrop-blur"
+          onClick={applyOption}
+          title="恢复默认缩放与位置"
+        >
+          <RotateCcw className="mr-1 size-3" />
+          <span>复原视图</span>
+        </Button>
+      </div>
+      <div ref={containerRef} className="h-[340px] sm:h-[460px] w-full" />
+    </div>
+  );
 }

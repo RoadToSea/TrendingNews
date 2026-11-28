@@ -1,28 +1,40 @@
-"""Tests for cc-switch AI provider CRUD, encrypted keys, and Antigravity/OpenAI/Anthropic adapters."""
+"""Tests for AI provider CRUD, encrypted keys, RBAC, DB migration, and Gemini/OpenAI/Anthropic adapters."""
 
-import asyncio
 import json
-import os
 from pathlib import Path
-import sys
+import sqlite3
 from types import SimpleNamespace
-from typing import Any, Dict, List
 
 from fastapi.testclient import TestClient
+import httpx
 import pytest
 
+from app.repositories.db import Database
 from app.services.ai_gateway.anthropic_adapter import AnthropicAdapter
-from app.services.ai_gateway.antigravity_adapter import AntigravityCLIAdapter
 from app.services.ai_gateway.base import LLMConfigError, LLMRateLimitError
+from app.services.ai_gateway.gemini_adapter import GeminiAdapter
 from app.services.ai_gateway.openai_adapter import OpenAIAdapter
 
 
 def test_ai_provider_crud_masking_and_exclusive_role_switch(auth_client: TestClient) -> None:
     initial = auth_client.get("/api/ai-providers").json()
-    assert len(initial) == 1
-    default_id = initial[0]["id"]
-    assert initial[0]["protocol"] == "antigravity"
-    assert set(initial[0]["role_bindings"]) == {"chat_default", "summary_report", "event_cluster"}
+    assert initial == []
+
+    first_resp = auth_client.post(
+        "/api/ai-providers",
+        json={
+            "name": "Google AI Studio",
+            "protocol": "gemini",
+            "base_url": "https://generativelanguage.googleapis.com/v1beta",
+            "api_key": "AIza-secret-gemini-1122",
+            "model": "gemini-2.5-flash",
+            "role_bindings": ["chat_default", "summary_report", "event_cluster"],
+            "is_enabled": True,
+        },
+    )
+    assert first_resp.status_code == 200
+    first_id = first_resp.json()["id"]
+    assert first_resp.json()["protocol"] == "gemini"
 
     create_resp = auth_client.post(
         "/api/ai-providers",
@@ -43,17 +55,16 @@ def test_ai_provider_crud_masking_and_exclusive_role_switch(auth_client: TestCli
     assert "998877" not in created["api_key_masked"]
     assert "***" in created["api_key_masked"]
 
-    # Duplicate name returns 409 Conflict
     dup = auth_client.post(
         "/api/ai-providers",
         json={"name": "中转 GPT-4o", "protocol": "openai", "model": "gpt-4o"},
     )
     assert dup.status_code == 409
 
-    # Role binding 'chat_default' must have been stripped from the Antigravity slot (cc-switch exclusivity)
+    # Role binding 'chat_default' must have been stripped from the first slot (exclusive role switch)
     all_slots = auth_client.get("/api/ai-providers").json()
-    default_after = next(s for s in all_slots if s["id"] == default_id)
-    assert "chat_default" not in default_after["role_bindings"]
+    first_after = next(s for s in all_slots if s["id"] == first_id)
+    assert "chat_default" not in first_after["role_bindings"]
 
     # Updating slot while sending masked key preserves encrypted secret
     upd = auth_client.put(
@@ -71,7 +82,6 @@ def test_ai_provider_crud_masking_and_exclusive_role_switch(auth_client: TestCli
         == "sk-secret-openai-998877"
     )
 
-    # Connectivity test & model discovery with injected fake adapter
     class _ProbeAdapter:
         def __init__(self, key: str):
             self.key = key
@@ -118,126 +128,91 @@ def test_ai_provider_crud_masking_and_exclusive_role_switch(auth_client: TestCli
     assert set(act_resp.json()["role_bindings"]) == {"chat_default", "summary_report", "event_cluster"}
 
     assert auth_client.delete(f"/api/ai-providers/{created['id']}").status_code == 200
+    assert auth_client.delete(f"/api/ai-providers/{first_id}").status_code == 200
 
 
 @pytest.mark.asyncio
-async def test_antigravity_cli_adapter_ndjson_proxy_cwd_and_continuation(tmp_path: Path) -> None:
-    sandbox_dir = tmp_path / "agy-sandbox"
-    record_file = tmp_path / "cli_invocation.json"
-    fake_cli = tmp_path / "fake_agy.py"
-    fake_cli.write_text(
-        f"""
-import json, os, sys
-with open({str(record_file)!r}, "w", encoding="utf-8") as fh:
-    json.dump({{
-        "argv": sys.argv[1:],
-        "cwd": os.getcwd(),
-        "http_proxy": os.environ.get("HTTP_PROXY", ""),
-        "https_proxy": os.environ.get("HTTPS_PROXY", ""),
-    }}, fh)
+async def test_gemini_adapter_models_json_stream_and_errors() -> None:
+    def _handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers.get("x-goog-api-key") == "AIza-unit-test"
+        url = str(request.url)
+        if url.endswith("/models"):
+            return httpx.Response(
+                200,
+                json={
+                    "models": [
+                        {
+                            "name": "models/gemini-2.5-flash",
+                            "supportedGenerationMethods": ["generateContent", "countTokens"],
+                        },
+                        {
+                            "name": "models/embedding-001",
+                            "supportedGenerationMethods": ["embedContent"],
+                        },
+                        {
+                            "name": "models/gemini-2.5-pro",
+                            "supportedGenerationMethods": ["generateContent"],
+                        },
+                    ]
+                },
+            )
+        if ":generateContent" in url:
+            body = json.loads(request.content.decode("utf-8"))
+            assert body["systemInstruction"]["parts"][0]["text"] == "sys"
+            assert body["generationConfig"]["responseMimeType"] == "application/json"
+            return httpx.Response(
+                200,
+                json={
+                    "candidates": [{"content": {"parts": [{"text": '{"ok": true, "count": 2}'}]}}],
+                    "usageMetadata": {"totalTokenCount": 42},
+                },
+            )
+        if ":streamGenerateContent" in url:
+            sse_body = (
+                'data: {"candidates":[{"content":{"parts":[{"text":"第一段"}]}}]}\n\n'
+                'data: {"candidates":[{"content":{"parts":[{"text":"第二段"}]}}],"usageMetadata":{"totalTokenCount":25}}\n\n'
+            )
+            return httpx.Response(200, content=sse_body.encode("utf-8"))
+        return httpx.Response(404, json={"error": {"message": "not found"}})
 
-print(json.dumps({{"event": "init", "conversation_id": "conv-abc-123"}}), flush=True)
-print(json.dumps({{
-    "event": "step_update",
-    "step_update": {{
-        "conversation_id": "conv-abc-123",
-        "step_index": 1,
-        "state": "ACTIVE",
-        "step_type": "agent_response",
-        "text_delta": "Hello "
-    }}
-}}), flush=True)
-print(json.dumps({{
-    "event": "step_update",
-    "step_update": {{
-        "conversation_id": "conv-abc-123",
-        "step_index": 1,
-        "state": "DONE",
-        "step_type": "agent_response",
-        "text_delta": "World"
-    }}
-}}), flush=True)
-print(json.dumps({{
-    "event": "result",
-    "result": {{
-        "conversation_id": "conv-abc-123",
-        "status": "SUCCESS",
-        "response": "Hello World",
-        "usage": {{"output_tokens": 2}}
-    }}
-}}), flush=True)
-""",
-        encoding="utf-8",
+    adapter = GeminiAdapter(
+        api_key="AIza-unit-test",
+        transport=httpx.MockTransport(_handler),
     )
 
-    adapter = AntigravityCLIAdapter(
-        agy_bin=sys.executable,
-        proxy_url="http://127.0.0.1:7890",
-        workspace=sandbox_dir,
-        timeout_sec=30,
-        semaphore=asyncio.Semaphore(2),
-        extra_args=[str(fake_cli)],
+    models = await adapter.list_models()
+    assert models == ["gemini-2.5-flash", "gemini-2.5-pro"]
+
+    parsed, usage = await adapter.complete_json(
+        [{"role": "user", "content": "hi"}],
+        "gemini-2.5-flash",
+        system_prompt="sys",
+        extra_params={"temperature": 0.2},
     )
+    assert parsed == {"ok": True, "count": 2}
+    assert usage["totalTokenCount"] == 42
 
-    events = []
-    async for ev in adapter.stream_chat(
-        [{"role": "user", "content": "Analyze hotlist"}],
-        "gemini-3.8-flash-medium",
-        system_prompt="Be concise",
-    ):
-        events.append(ev)
+    events = [
+        ev
+        async for ev in adapter.stream_chat(
+            [{"role": "user", "content": "分析"}, {"role": "assistant", "content": "收到"}],
+            "models/gemini-2.5-flash",
+            system_prompt="sys",
+        )
+    ]
+    assert events[0].type == "init"
+    assert [e.text for e in events if e.type == "delta"] == ["第一段", "第二段"]
+    assert events[-1].type == "done"
+    assert events[-1].usage["totalTokenCount"] == 25
 
-    assert [e.type for e in events] == ["init", "delta", "delta", "done"]
-    assert "".join(e.text for e in events if e.type == "delta") == "Hello World"
-    assert events[-1].conversation_id == "conv-abc-123"
-    assert events[-1].usage == {"output_tokens": 2}
-
-    recorded = json.loads(record_file.read_text(encoding="utf-8"))
-    argv: List[str] = recorded["argv"]
-    assert Path(recorded["cwd"]).resolve() == sandbox_dir.resolve()
-    assert recorded["https_proxy"] == "http://127.0.0.1:7890"
-    assert "--dangerously-skip-permissions" not in argv
-    assert "--sandbox" in argv
-    assert "--disable-slash-commands" in argv
-    assert argv[argv.index("--print-timeout") + 1] == "30s"
-    assert any(arg.startswith("-p=") for arg in argv)
-
-    # Turn 2 passes --conversation
-    events_turn2 = []
-    async for ev in adapter.stream_chat(
-        [{"role": "user", "content": "Follow up"}],
-        "gemini-3.8-flash-medium",
-        external_conversation_id="conv-abc-123",
-    ):
-        events_turn2.append(ev)
-    recorded_turn2 = json.loads(record_file.read_text(encoding="utf-8"))
-    assert "--conversation" in recorded_turn2["argv"]
-    assert "conv-abc-123" in recorded_turn2["argv"]
-
-
-@pytest.mark.asyncio
-async def test_antigravity_concurrency_semaphore_limit(tmp_path: Path) -> None:
-    sem = asyncio.Semaphore(1)
-    await sem.acquire()
-    adapter = AntigravityCLIAdapter(
-        agy_bin=sys.executable,
-        proxy_url="",
-        workspace=tmp_path,
-        timeout_sec=10,
-        semaphore=sem,
+    rate_limited = GeminiAdapter(
+        api_key="AIza-unit-test",
+        transport=httpx.MockTransport(
+            lambda req: httpx.Response(429, json={"error": {"message": "Quota exceeded"}})
+        ),
     )
-    # Monkeypatch _acquire_slot wait timeout implicitly by checking immediate exhaustion
-    with pytest.raises(LLMRateLimitError):
-        async def _quick_fail():
-            try:
-                await asyncio.wait_for(sem.acquire(), timeout=0.05)
-            except asyncio.TimeoutError as exc:
-                raise LLMRateLimitError("busy") from exc
-
-        adapter._acquire_slot = _quick_fail  # type: ignore[method-assign]
-        async for _ in adapter.stream_chat([{"role": "user", "content": "hi"}], "m"):
-            pass
-    sem.release()
+    with pytest.raises(LLMRateLimitError, match="Quota exceeded"):
+        await rate_limited.complete_json([{"role": "user", "content": "hi"}], "gemini-2.5-flash")
 
 
 @pytest.mark.asyncio
@@ -284,39 +259,6 @@ async def test_openai_and_anthropic_adapters_complete_json() -> None:
 
 
 @pytest.mark.asyncio
-async def test_antigravity_list_models_parses_cli_output(tmp_path: Path) -> None:
-    fake_cli = tmp_path / "fake_agy_models.py"
-    fake_cli.write_text(
-        """
-import sys
-assert sys.argv[1] == "models"
-print("Fetching available models...")
-print("Available models:")
-print("gemini-4-neon-high\\tGemini 4 Neon (High)")
-print("gemini-3.8-flash-medium  (default)")
-print("claude-sonnet-4-6")
-print("gpt-oss-120b-medium")
-""",
-        encoding="utf-8",
-    )
-    adapter = AntigravityCLIAdapter(
-        agy_bin=sys.executable,
-        proxy_url="http://127.0.0.1:7890",
-        workspace=tmp_path / "agy-ws",
-        timeout_sec=15,
-        semaphore=asyncio.Semaphore(2),
-        extra_args=[str(fake_cli)],
-    )
-    models = await adapter.list_models()
-    assert models == [
-        "gemini-4-neon-high",
-        "gemini-3.8-flash-medium",
-        "claude-sonnet-4-6",
-        "gpt-oss-120b-medium",
-    ]
-
-
-@pytest.mark.asyncio
 async def test_official_hosts_reject_empty_api_key() -> None:
     oa_official = OpenAIAdapter(api_key="", base_url="https://api.openai.com/v1")
     with pytest.raises(LLMConfigError, match="API Key"):
@@ -325,6 +267,10 @@ async def test_official_hosts_reject_empty_api_key() -> None:
     ant_official = AnthropicAdapter(api_key="", base_url="https://api.anthropic.com")
     with pytest.raises(LLMConfigError, match="API Key"):
         await ant_official.list_models()
+
+    gem_official = GeminiAdapter(api_key="", base_url="")
+    with pytest.raises(LLMConfigError, match="API Key"):
+        await gem_official.list_models()
 
     class _FakeLocalClient:
         class models:
@@ -341,3 +287,105 @@ async def test_official_hosts_reject_empty_api_key() -> None:
         client_factory=lambda: _FakeLocalClient(),
     )
     assert await oa_local.list_models() == ["qwen2.5:7b"]
+
+
+def test_legacy_antigravity_table_migrates_to_gemini_constraint(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy_ai.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        """
+        CREATE TABLE ai_providers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            protocol TEXT NOT NULL CHECK(protocol IN ('openai', 'anthropic', 'antigravity')),
+            base_url TEXT NOT NULL DEFAULT '',
+            api_key_encrypted TEXT NOT NULL DEFAULT '',
+            model TEXT NOT NULL,
+            extra_params_json TEXT NOT NULL DEFAULT '{}',
+            role_bindings_json TEXT NOT NULL DEFAULT '[]',
+            is_enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'admin',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            invited_by_code_id INTEGER DEFAULT NULL,
+            last_login_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE chat_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            provider_slot_id INTEGER,
+            external_conversation_id TEXT NOT NULL DEFAULT '',
+            prompt_template_id INTEGER,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_type TEXT NOT NULL,
+            report_date TEXT NOT NULL,
+            domain TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL,
+            content_md TEXT NOT NULL,
+            related_event_ids_json TEXT NOT NULL DEFAULT '[]',
+            related_news_ids_json TEXT NOT NULL DEFAULT '[]',
+            source_session_id INTEGER,
+            provider_slot_id INTEGER,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO ai_providers (name, protocol, model, created_at, updated_at)
+        VALUES ('Old Agy', 'antigravity', 'gemini-3.8-flash-medium', '2026-11-22T00:00:00', '2026-11-22T00:00:00')
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO ai_providers (name, protocol, model, created_at, updated_at)
+        VALUES ('Keep OpenAI', 'openai', 'gpt-4o-mini', '2026-11-22T00:00:00', '2026-11-22T00:00:00')
+        """
+    )
+    conn.execute(
+        "INSERT INTO chat_sessions (user_id, title, provider_slot_id, created_at, updated_at) VALUES (1, 'S1', 1, '2026-11-22T00:00:00', '2026-11-22T00:00:00')"
+    )
+    conn.commit()
+    conn.close()
+
+    Database(db_path).init_schema()
+
+    verify = sqlite3.connect(str(db_path))
+    rows = verify.execute("SELECT name, protocol FROM ai_providers ORDER BY id").fetchall()
+    assert rows == [("Keep OpenAI", "openai")]
+    sess_slot = verify.execute("SELECT provider_slot_id FROM chat_sessions WHERE id = 1").fetchone()[0]
+    assert sess_slot is None
+    verify.execute(
+        """
+        INSERT INTO ai_providers (name, protocol, model, created_at, updated_at)
+        VALUES ('Google Gemini', 'gemini', 'gemini-2.5-flash', '2026-11-28T00:00:00', '2026-11-28T00:00:00')
+        """
+    )
+    verify.commit()
+    verify.close()

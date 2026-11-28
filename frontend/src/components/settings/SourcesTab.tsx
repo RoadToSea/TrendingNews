@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
-import { Globe, ShieldAlert } from "lucide-react";
+import { Globe } from "lucide-react";
 import { settingsApi } from "@/api/endpoints";
 import type { DomainItemCfg, PlatformSource, RssFeedCfg } from "@/components/settings/authoritativePresets";
 import { DomainsManagerCard } from "@/components/settings/DomainsManagerCard";
 import { ForeignSourcesManagerCard } from "@/components/settings/ForeignSourcesManagerCard";
 import { PlatformsManagerCard } from "@/components/settings/PlatformsManagerCard";
 import { RssFeedsManagerCard } from "@/components/settings/RssFeedsManagerCard";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Alert } from "@/components/ui/feedback";
@@ -220,7 +219,6 @@ export function SourcesTab({ onDirtyChange }: SourcesTabProps = {}) {
                 >
                   {item.countText}
                 </span>
-                {dirty[item.key] && <Badge variant="warning">保存中</Badge>}
               </Button>
             );
           })}
@@ -268,10 +266,6 @@ export function SourcesTab({ onDirtyChange }: SourcesTabProps = {}) {
                 </Button>
               </div>
             </Field>
-            <div className="flex items-start gap-2 text-sm text-muted-foreground">
-              <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-600" />
-              <span>注：Antigravity CLI 的网络代理独立由服务器环境变量 TRENDRADAR_AGY_PROXY 控制，不受此处影响。</span>
-            </div>
           </div>
         </Card>
       )}
@@ -279,12 +273,10 @@ export function SourcesTab({ onDirtyChange }: SourcesTabProps = {}) {
       <div className={category === "platforms" ? "" : "hidden"}>
         <PlatformsManagerCard
           config={platformsCfg}
-          saveStatus={platformsAuto.status}
           onChange={(next, immediate = false) => {
             setPlatformsCfg(next);
             platformsAuto.queueSave(next, { immediate });
           }}
-          onSave={() => void platformsAuto.flushNow()}
           onError={(msg) => setCatError("platforms", msg)}
         />
       </div>
@@ -292,13 +284,11 @@ export function SourcesTab({ onDirtyChange }: SourcesTabProps = {}) {
       <div className={category === "foreign" ? "" : "hidden"}>
         <ForeignSourcesManagerCard
           config={foreignCfg}
-          saveStatus={foreignAuto.status}
           onChange={(next, immediate = false) => {
             setForeignCfg(next);
             foreignAuto.queueSave(next, { immediate });
           }}
           onKeepaliveFlush={(next) => settingsApi.keepaliveUpdateSection("foreign_sources", next)}
-          onSave={() => void foreignAuto.flushNow()}
         />
       </div>
 
@@ -306,12 +296,10 @@ export function SourcesTab({ onDirtyChange }: SourcesTabProps = {}) {
         <RssFeedsManagerCard
           config={rssCfg}
           domains={domains}
-          saveStatus={rssAuto.status}
           onChange={(next, immediate = false) => {
             setRssCfg(next);
             rssAuto.queueSave(next, { immediate });
           }}
-          onSave={() => void rssAuto.flushNow()}
           onError={(msg) => setCatError("rss", msg)}
         />
       </div>
@@ -319,13 +307,11 @@ export function SourcesTab({ onDirtyChange }: SourcesTabProps = {}) {
       <div className={category === "domains" ? "" : "hidden"}>
         <DomainsManagerCard
           domains={domains}
-          saveStatus={domainsAuto.status}
           onChange={(nextItems, immediate = false) => {
             const next = { ...domainsCfg, items: nextItems };
             setDomainsCfg(next);
             domainsAuto.queueSave(next, { immediate });
           }}
-          onSave={() => void domainsAuto.flushNow()}
           onError={(msg) => setCatError("domains", msg)}
         />
       </div>

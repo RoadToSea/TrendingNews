@@ -48,27 +48,6 @@ class ChatRepository:
                 (name, content, now_iso, now_iso),
             )
 
-    def ensure_default_antigravity_provider(self, now_iso: str) -> None:
-        """Seed a default Antigravity CLI slot when `ai_providers` is completely empty.
-
-        Args:
-            now_iso: ISO-8601 timestamp.
-        """
-        with self._db.write_transaction() as conn:
-            row = conn.execute("SELECT COUNT(*) AS cnt FROM ai_providers").fetchone()
-            if row and int(row["cnt"]) > 0:
-                return
-            conn.execute(
-                """
-                INSERT INTO ai_providers (
-                    name, protocol, base_url, api_key_encrypted, model,
-                    extra_params_json, role_bindings_json, is_enabled, created_at, updated_at
-                )
-                VALUES (?, 'antigravity', '', '', 'gemini-3.8-flash-medium', '{}', ?, 1, ?, ?)
-                """,
-                ("Antigravity 主力", json.dumps(["chat_default", "summary_report", "event_cluster"]), now_iso, now_iso),
-            )
-
     def list_ai_providers(self) -> List[Dict[str, Any]]:
         """List all configured AI provider slots ordered by ID.
 
@@ -122,7 +101,7 @@ class ChatRepository:
 
         Args:
             name: Unique slot display name.
-            protocol: `'openai'`, `'anthropic'`, or `'antigravity'`.
+            protocol: `'openai'`, `'anthropic'`, or `'gemini'`.
             base_url: Optional endpoint base URL.
             api_key_encrypted: Fernet-encrypted API key token or empty string.
             model: Model identifier string.

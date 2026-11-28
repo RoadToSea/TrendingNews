@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import {
+  ArrowUp,
   FilePlus2,
   Loader2,
   Maximize2,
@@ -10,17 +11,11 @@ import {
   Plus,
   Send,
   Square,
-  Trash2,
   X,
 } from "lucide-react";
 import { streamChatSSE } from "@/api/client";
-import { aiConfigApi, chatApi } from "@/api/endpoints";
-import type {
-  AIProviderSlotDTO,
-  ChatMessageDTO,
-  ChatSessionDTO,
-  PromptTemplateDTO,
-} from "@/api/types";
+import { chatApi } from "@/api/endpoints";
+import type { ChatMessageDTO, ChatSessionDTO } from "@/api/types";
 import { SaveReportDialog } from "@/components/chat/SaveReportDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,18 +42,17 @@ export function FloatingChatWidget() {
     selectedItems,
     removeItem,
     clearItems,
+    requestedSessionId,
+    clearRequestedSession,
   } = useSelection();
   const location = useLocation();
-  const isSettingsPage = location.pathname.startsWith("/settings");
+  const isConfigRoute =
+    location.pathname.startsWith("/settings") || location.pathname.startsWith("/admin");
 
   const [wideMode, setWideMode] = useState(false);
   const [sessions, setSessions] = useState<ChatSessionDTO[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
   const [messages, setMessages] = useState<ChatMessageDTO[]>([]);
-  const [providers, setProviders] = useState<AIProviderSlotDTO[]>([]);
-  const [prompts, setPrompts] = useState<PromptTemplateDTO[]>([]);
-  const [slotId, setSlotId] = useState<string>("");
-  const [promptId, setPromptId] = useState<string>("");
   const [input, setInput] = useState("");
   const [streamingText, setStreamingText] = useState("");
   const [sending, setSending] = useState(false);
@@ -69,39 +63,17 @@ export function FloatingChatWidget() {
   const abortRef = useRef<AbortController | null>(null);
   const scrollEndRef = useRef<HTMLDivElement | null>(null);
 
-  const defaultProviderId = (() => {
-    const def =
-      providers.find((p) => p.role_bindings.includes("chat_default")) ?? providers[0];
-    return def ? String(def.id) : "";
-  })();
-
-  const defaultPromptId = (() => {
-    const def = prompts.find((t) => t.is_default) ?? prompts[0];
-    return def ? String(def.id) : "";
-  })();
-
-  const loadMetadata = async () => {
+  const loadSessions = async () => {
     try {
-      const [sessList, provList, tplList] = await Promise.all([
-        chatApi.listSessions(),
-        aiConfigApi.listProviders(),
-        aiConfigApi.listPrompts(),
-      ]);
+      const sessList = await chatApi.listSessions();
       setSessions(sessList);
-      const enabledProviders = provList.filter((p) => p.is_enabled);
-      const enabledPrompts = tplList.filter((t) => t.is_enabled);
-      setProviders(enabledProviders);
-      setPrompts(enabledPrompts);
-
-      const defaultSlot =
-        enabledProviders.find((p) => p.role_bindings.includes("chat_default")) ?? enabledProviders[0];
-      if (defaultSlot && !slotId) setSlotId(String(defaultSlot.id));
-
-      const defaultTpl = enabledPrompts.find((t) => t.is_default) ?? enabledPrompts[0];
-      if (defaultTpl && !promptId) setPromptId(String(defaultTpl.id));
-
-      if (sessList.length > 0 && activeSessionId === null) {
+      if (requestedSessionId !== null) {
+        setActiveSessionId(requestedSessionId);
+        clearRequestedSession();
+      } else if (sessList.length > 0 && activeSessionId === null) {
         setActiveSessionId(sessList[0].id);
+      } else if (activeSessionId !== null && !sessList.some((s) => s.id === activeSessionId)) {
+        setActiveSessionId(sessList.length > 0 ? sessList[0].id : null);
       }
     } catch {
       // Ignore transient init errors until drawer opens
@@ -110,27 +82,22 @@ export function FloatingChatWidget() {
 
   useEffect(() => {
     if (chatOpen) {
-      void loadMetadata();
+      void loadSessions();
     }
-  }, [chatOpen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatOpen, requestedSessionId]);
 
   useEffect(() => {
-    if (!chatOpen || activeSessionId === null) return;
+    if (!chatOpen || activeSessionId === null) {
+      if (activeSessionId === null) setMessages([]);
+      return;
+    }
     let cancelled = false;
     chatApi
       .getMessages(activeSessionId)
       .then((res) => {
-        if (cancelled) return;
-        setMessages(res.messages);
-        if (res.session.provider_slot_id) {
-          setSlotId(String(res.session.provider_slot_id));
-        } else if (defaultProviderId) {
-          setSlotId(defaultProviderId);
-        }
-        if (res.session.prompt_template_id) {
-          setPromptId(String(res.session.prompt_template_id));
-        } else if (defaultPromptId) {
-          setPromptId(defaultPromptId);
+        if (!cancelled) {
+          setMessages(res.messages);
         }
       })
       .catch((err) => {
@@ -139,7 +106,7 @@ export function FloatingChatWidget() {
     return () => {
       cancelled = true;
     };
-  }, [chatOpen, activeSessionId, defaultProviderId, defaultPromptId]);
+  }, [chatOpen, activeSessionId]);
 
   useEffect(() => {
     if (!sending || streamingText) {
@@ -159,30 +126,12 @@ export function FloatingChatWidget() {
   const handleNewSession = async () => {
     setError("");
     try {
-      const created = await chatApi.createSession({
-        title: "新对话",
-        provider_slot_id: slotId ? Number(slotId) : null,
-        prompt_template_id: promptId ? Number(promptId) : null,
-      });
+      const created = await chatApi.createSession({ title: "新对话" });
       setSessions((prev) => [created, ...prev]);
       setActiveSessionId(created.id);
       setMessages([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "创建会话失败");
-    }
-  };
-
-  const handleDeleteSession = async () => {
-    if (activeSessionId === null) return;
-    if (!window.confirm("确定删除当前对话记录吗？")) return;
-    try {
-      await chatApi.deleteSession(activeSessionId);
-      const remaining = sessions.filter((s) => s.id !== activeSessionId);
-      setSessions(remaining);
-      setActiveSessionId(remaining.length > 0 ? remaining[0].id : null);
-      setMessages([]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "删除会话失败");
     }
   };
 
@@ -196,11 +145,7 @@ export function FloatingChatWidget() {
     let targetId = activeSessionId;
     try {
       if (targetId === null) {
-        const created = await chatApi.createSession({
-          title: text.slice(0, 32),
-          provider_slot_id: slotId ? Number(slotId) : null,
-          prompt_template_id: promptId ? Number(promptId) : null,
-        });
+        const created = await chatApi.createSession({ title: text.slice(0, 32) });
         setSessions((prev) => [created, ...prev]);
         setActiveSessionId(created.id);
         targetId = created.id;
@@ -228,8 +173,6 @@ export function FloatingChatWidget() {
         {
           content: text,
           context_items: attached,
-          provider_slot_id: slotId ? Number(slotId) : undefined,
-          prompt_template_id: promptId ? Number(promptId) : undefined,
         },
         {
           onDelta: (delta) => {
@@ -265,32 +208,48 @@ export function FloatingChatWidget() {
   const activeSession = sessions.find((s) => s.id === activeSessionId);
 
   if (!chatOpen) {
-    if (isSettingsPage) return null;
+    if (isConfigRoute) return null;
     return (
-      <div className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] right-3.5 z-40 flex items-center gap-2 md:bottom-5 md:right-5">
-        {isPicking && (
+      <div className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] right-3.5 z-40 flex flex-col items-end gap-2 md:bottom-5 md:right-5">
+        <Button
+          size="icon"
+          variant="outline"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          className="size-10 rounded-full bg-card shadow-md"
+          aria-label="回到页面顶部"
+          title="回到页面顶部"
+        >
+          <ArrowUp className="size-4" />
+        </Button>
+
+        <div className="flex items-center gap-2">
+          {isPicking && (
+            <Button
+              size="lg"
+              variant="outline"
+              onClick={() => {
+                togglePicking();
+                setChatOpen(true);
+              }}
+              className="h-11 rounded-full border-destructive/50 bg-card px-3.5 sm:px-4 text-sm font-medium text-destructive shadow-lg hover:bg-destructive/10"
+            >
+              <X data-icon="inline-start" />
+              <span>退出选择模式</span>
+            </Button>
+          )}
           <Button
             size="lg"
-            variant="outline"
-            onClick={togglePicking}
-            className="h-11 rounded-full border-destructive/50 bg-card px-3.5 sm:px-4 text-sm font-medium text-destructive shadow-lg hover:bg-destructive/10"
+            onClick={() => setChatOpen(true)}
+            className="h-11 rounded-full px-4 shadow-lg"
           >
-            <X data-icon="inline-start" />
-            <span>退出选择模式</span>
+            <MessageSquare data-icon="inline-start" />
+            <span className="hidden sm:inline">AI 研判助手</span>
+            <span className="sm:hidden">AI 助手</span>
+            {selectedItems.length > 0 && (
+              <Badge className="ml-1 bg-card text-primary">{selectedItems.length}</Badge>
+            )}
           </Button>
-        )}
-        <Button
-          size="lg"
-          onClick={() => setChatOpen(true)}
-          className="h-11 rounded-full px-4 shadow-lg"
-        >
-          <MessageSquare data-icon="inline-start" />
-          <span className="hidden sm:inline">AI 研判助手</span>
-          <span className="sm:hidden">AI 助手</span>
-          {selectedItems.length > 0 && (
-            <Badge className="ml-1 bg-card text-primary">{selectedItems.length}</Badge>
-          )}
-        </Button>
+        </div>
       </div>
     );
   }
@@ -311,7 +270,7 @@ export function FloatingChatWidget() {
               value={activeSessionId !== null ? String(activeSessionId) : ""}
               onValueChange={(val) => setActiveSessionId(Number(val))}
             >
-              <SelectTrigger className="h-9 min-w-0 flex-1 text-sm md:max-w-[200px]">
+              <SelectTrigger className="h-9 min-w-0 flex-1 text-sm md:max-w-[220px]">
                 <SelectValue placeholder="新建或选择会话" />
               </SelectTrigger>
               <SelectContent>
@@ -334,18 +293,6 @@ export function FloatingChatWidget() {
             >
               <Plus className="size-4" />
             </Button>
-            {activeSessionId !== null && (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="size-9 shrink-0 text-muted-foreground hover:text-destructive"
-                onClick={handleDeleteSession}
-                aria-label="删除当前对话"
-                title="删除当前对话"
-              >
-                <Trash2 className="size-4" />
-              </Button>
-            )}
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
@@ -382,46 +329,14 @@ export function FloatingChatWidget() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 border-b border-border bg-background/60 px-3 py-2">
-          <Select value={slotId} onValueChange={setSlotId}>
-            <SelectTrigger className="h-9 text-sm">
-              <SelectValue placeholder="选择 AI 模型" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {providers.map((p) => (
-                  <SelectItem key={p.id} value={String(p.id)}>
-                    {p.name} ({p.model})
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-
-          <Select value={promptId} onValueChange={setPromptId}>
-            <SelectTrigger className="h-9 text-sm">
-              <SelectValue placeholder="开场提示词模板" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {prompts.map((tpl) => (
-                  <SelectItem key={tpl.id} value={String(tpl.id)}>
-                    {tpl.name}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </div>
-
         <div className="flex flex-col gap-2 border-b border-border bg-card px-3 py-2">
           <div className="flex items-center justify-between gap-2">
             <Button
               size="sm"
-              variant={isPicking && !isSettingsPage ? "secondary" : "outline"}
+              variant={isPicking && !isConfigRoute ? "secondary" : "outline"}
               onClick={() => {
-                if (isSettingsPage) {
-                  setError("当前位于配置中心，请先切换到「热点」或「领域」页面再选择新闻卡片。");
+                if (isConfigRoute) {
+                  setError("当前位于配置或管理页面，请先切换到「热点」或「领域」页面再选择新闻卡片。");
                   return;
                 }
                 setError("");
@@ -432,14 +347,14 @@ export function FloatingChatWidget() {
                   setChatOpen(false);
                 }
               }}
-              className={cn(isPicking && !isSettingsPage && "text-destructive border-destructive/40")}
+              className={cn(isPicking && !isConfigRoute && "text-destructive border-destructive/40")}
             >
-              {isPicking && !isSettingsPage ? (
+              {isPicking && !isConfigRoute ? (
                 <X data-icon="inline-start" />
               ) : (
                 <MousePointerClick data-icon="inline-start" />
               )}
-              <span>{isPicking && !isSettingsPage ? "退出选择模式" : "选择页面新闻"}</span>
+              <span>{isPicking && !isConfigRoute ? "退出选择模式" : "选择页面新闻"}</span>
             </Button>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <span>已附带 {selectedItems.length} 项</span>
@@ -526,11 +441,6 @@ export function FloatingChatWidget() {
                   <Loader2 className="size-3.5 animate-spin" />
                   <span>AI 正在连接并思考中...（已等待 {waitSeconds}s）</span>
                 </div>
-                {waitSeconds >= 8 && (
-                  <span className="text-xs text-muted-foreground">
-                    若等待时间较长，可在配置中心的「AI 模型配置」测试接口联通状态。
-                  </span>
-                )}
               </div>
             )}
 
@@ -590,7 +500,6 @@ export function FloatingChatWidget() {
         onOpenChange={setSaveDialogOpen}
         sessionId={activeSessionId}
         defaultTitle={activeSession?.title || ""}
-        providerSlotId={slotId ? Number(slotId) : undefined}
       />
     </>
   );

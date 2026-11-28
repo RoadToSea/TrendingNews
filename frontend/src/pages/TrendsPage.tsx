@@ -25,11 +25,14 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { useAuth } from "@/context/AuthContext";
 import { useCrawl } from "@/context/CrawlContext";
 import { useSelection } from "@/context/SelectionContext";
 
 export function TrendsPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const { addItem, setChatOpen } = useSelection();
   const { crawling, startCrawl, clusterVersion } = useCrawl();
 
@@ -237,18 +240,22 @@ export function TrendsPage() {
           <div className="flex h-[280px] sm:h-[320px] flex-col items-center justify-center gap-3 px-4 text-center text-sm text-muted-foreground">
             <p className="text-base font-medium text-foreground">暂无跨天事件趋势数据</p>
             <p className="max-w-md text-sm">
-              请确认已在配置中心启用 AI 模型并点击「更新数据」，系统会自动整理每日热点走势。
+              {isAdmin
+                ? "请确认已在管理后台启用 AI 模型并点击「更新数据」，系统会自动整理每日热点走势。"
+                : "暂无跨天事件趋势数据，请等待系统完成采集与归类。"}
             </p>
-            <div className="flex flex-wrap justify-center gap-2 pt-1">
-              <Button size="sm" onClick={() => void startCrawl(true)} disabled={crawling}>
-                <RefreshCw data-icon="inline-start" className={cn(crawling && "animate-spin")} />
-                <span>{crawling ? "更新中..." : "立即更新数据"}</span>
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => navigate("/settings?tab=ai")}>
-                <Settings data-icon="inline-start" />
-                <span>前往配置中心</span>
-              </Button>
-            </div>
+            {isAdmin && (
+              <div className="flex flex-wrap justify-center gap-2 pt-1">
+                <Button size="sm" onClick={() => void startCrawl(true)} disabled={crawling}>
+                  <RefreshCw data-icon="inline-start" className={cn(crawling && "animate-spin")} />
+                  <span>{crawling ? "更新中..." : "立即更新数据"}</span>
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => navigate("/admin?tab=ai")}>
+                  <Settings data-icon="inline-start" />
+                  <span>前往管理后台</span>
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </Card>

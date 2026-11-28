@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Plus, SlidersHorizontal, Sparkles, Trash2 } from "lucide-react";
-import { AutoSaveBadge } from "@/components/settings/AutoSaveBadge";
 import { AUTHORITATIVE_PLATFORM_PRESETS, type PlatformSource } from "@/components/settings/authoritativePresets";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,21 +7,16 @@ import { Card } from "@/components/ui/card";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import type { AutoSaveStatus } from "@/hooks/useAutoSave";
 
 interface PlatformsManagerCardProps {
   config: Record<string, unknown>;
-  saveStatus?: AutoSaveStatus;
   onChange: (next: Record<string, unknown>, immediate?: boolean) => void;
-  onSave: () => void;
   onError: (msg: string) => void;
 }
 
 export function PlatformsManagerCard({
   config,
-  saveStatus = "idle",
   onChange,
-  onSave,
   onError,
 }: PlatformsManagerCardProps) {
   const [presetOpen, setPresetOpen] = useState(false);
@@ -87,7 +81,6 @@ export function PlatformsManagerCard({
           </Badge>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
-          <AutoSaveBadge status={saveStatus} onFlush={onSave} />
           <Button size="sm" variant="outline" onClick={() => setPresetOpen((v) => !v)}>
             <Sparkles data-icon="inline-start" />
             <span>{presetOpen ? "收起预设" : "权威媒体预设"}</span>

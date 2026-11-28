@@ -375,7 +375,7 @@ class ReportGenerateRequest(BaseModel):
     provider_slot_id: Optional[int] = None
 
 
-AIProviderProtocol = Literal["openai", "anthropic", "antigravity"]
+AIProviderProtocol = Literal["openai", "anthropic", "gemini"]
 AIProviderRole = Literal["chat_default", "summary_report", "event_cluster"]
 
 

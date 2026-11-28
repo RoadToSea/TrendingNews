@@ -10,12 +10,15 @@ import { Card } from "@/components/ui/card";
 import { Alert, Skeleton } from "@/components/ui/feedback";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAuth } from "@/context/AuthContext";
 import { useCrawl } from "@/context/CrawlContext";
 import { useSelection } from "@/context/SelectionContext";
 import { cn, formatMetricLabel, formatShortTime } from "@/lib/utils";
 
 export function PlatformsPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const { selectedItems, setChatOpen } = useSelection();
   const { crawling, hotlistVersion, rssVersion, startCrawl } = useCrawl();
 
@@ -147,16 +150,27 @@ export function PlatformsPage() {
         <Card className="flex flex-col items-center justify-center gap-3 p-10 text-center">
           <p className="text-base font-semibold text-foreground">暂无满足条件的热点新闻</p>
           <p className="max-w-md text-sm text-muted-foreground">
-            点击顶部「更新数据」或下方按钮即可获取最新热点，也可先到配置中心调整关注话题与来源。
+            {isAdmin
+              ? "点击顶部「更新数据」或下方按钮即可获取最新热点，也可先到管理后台调整数据源。"
+              : "暂未采集到满足条件的热点新闻，可在配置中心调整您的关注话题规则。"}
           </p>
           <div className="flex flex-wrap justify-center gap-2 pt-1">
-            <Button size="sm" onClick={() => void startCrawl(true)}>
-              立即更新数据
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => navigate("/settings")}>
-              <Settings data-icon="inline-start" />
-              <span>前往配置中心</span>
-            </Button>
+            {isAdmin ? (
+              <>
+                <Button size="sm" onClick={() => void startCrawl(true)}>
+                  立即更新数据
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => navigate("/admin")}>
+                  <Settings data-icon="inline-start" />
+                  <span>前往管理后台</span>
+                </Button>
+              </>
+            ) : (
+              <Button size="sm" variant="outline" onClick={() => navigate("/settings")}>
+                <Settings data-icon="inline-start" />
+                <span>前往配置中心</span>
+              </Button>
+            )}
           </div>
         </Card>
       );

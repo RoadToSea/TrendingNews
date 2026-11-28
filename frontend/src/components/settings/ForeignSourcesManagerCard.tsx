@@ -1,23 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Plus, SlidersHorizontal, X } from "lucide-react";
-import { AutoSaveBadge } from "@/components/settings/AutoSaveBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import type { AutoSaveStatus } from "@/hooks/useAutoSave";
 import { cn } from "@/lib/utils";
 
 type ForeignKey = "reddit" | "youtube" | "hackernews" | "huggingface" | "github";
 
 interface ForeignSourcesManagerCardProps {
   config: Record<string, unknown>;
-  saveStatus?: AutoSaveStatus;
   onChange: (next: Record<string, unknown>, immediate?: boolean) => void;
   onKeepaliveFlush?: (next: Record<string, unknown>) => void;
-  onSave: () => void;
 }
 
 export function normalizeYoutubeChannels(raw: unknown): string[] {
@@ -162,10 +158,8 @@ function ForeignChipEditor({
 
 export function ForeignSourcesManagerCard({
   config,
-  saveStatus = "idle",
   onChange,
   onKeepaliveFlush,
-  onSave,
 }: ForeignSourcesManagerCardProps) {
   const [expandedKey, setExpandedKey] = useState<ForeignKey | null>(null);
   const [proxyOpen, setProxyOpen] = useState(false);
@@ -423,7 +417,6 @@ export function ForeignSourcesManagerCard({
             点击任一平台即可展开其专属参数与订阅列表，未展开项保持折叠以减少视觉干扰
           </p>
         </div>
-        <AutoSaveBadge status={saveStatus} onFlush={onSave} />
       </div>
 
       <FieldGroup>
